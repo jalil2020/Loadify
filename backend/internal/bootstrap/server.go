@@ -51,6 +51,9 @@ func NewFiberApp(c *Container) *fiber.App {
 		Company:   c.Handlers.Company,
 		File:      c.Handlers.File,
 		Reference: c.Handlers.Reference,
+		Load:      c.Handlers.Load,
+		Booking:   c.Handlers.Booking,
+		Trip:      c.Handlers.Trip,
 	}, route.Deps{
 		Cfg:   c.Cfg,
 		Auth:  c.Auth,

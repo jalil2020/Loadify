@@ -18,6 +18,16 @@ func bind(c *fiber.Ctx, dst any, v validator.Validator) error {
 	return v.Struct(dst)
 }
 
+// bindOptional binds a body that the client may legitimately omit — an action
+// endpoint whose payload only carries optional overrides. An empty body leaves
+// dst at its zero value; a malformed one is still rejected.
+func bindOptional(c *fiber.Ctx, dst any, v validator.Validator) error {
+	if len(c.Body()) == 0 {
+		return nil
+	}
+	return bind(c, dst, v)
+}
+
 // bindQuery parses query parameters into dst and validates them.
 func bindQuery(c *fiber.Ctx, dst any, v validator.Validator) error {
 	if err := c.QueryParser(dst); err != nil {

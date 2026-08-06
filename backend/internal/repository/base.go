@@ -82,6 +82,13 @@ func translate(err error, resource string) error {
 	}
 }
 
+// isUniqueViolation reports whether the error is a Postgres unique-constraint
+// breach. Callers use it to turn a race into a precise domain error rather than
+// the generic "already exists" from translate.
+func isUniqueViolation(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "SQLSTATE 23505")
+}
+
 // applyOrder appends a validated ORDER BY clause.
 func applyOrder(q *gorm.DB, order string) *gorm.DB {
 	if order == "" {

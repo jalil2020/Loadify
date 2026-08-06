@@ -144,6 +144,41 @@ func (m *JSONMap) Scan(src any) error {
 // GormDataType tells GORM the column type.
 func (JSONMap) GormDataType() string { return "jsonb" }
 
+// JSONRaw holds a jsonb value whose shape is not fixed — a settings value may be
+// a string, a number or an object, so it is kept as raw JSON and decoded by the
+// typed accessors.
+type JSONRaw []byte
+
+// Value writes the raw JSON.
+func (r JSONRaw) Value() (driver.Value, error) {
+	if len(r) == 0 {
+		return nil, nil
+	}
+	return string(r), nil
+}
+
+// Scan copies the raw JSON out of the driver's buffer.
+func (r *JSONRaw) Scan(src any) error {
+	switch v := src.(type) {
+	case nil:
+		*r = nil
+	case []byte:
+		// The driver may reuse its buffer, so the bytes must be copied.
+		*r = append(JSONRaw(nil), v...)
+	case string:
+		*r = JSONRaw(v)
+	default:
+		return fmt.Errorf("jsonb: unsupported scan type %T", src)
+	}
+	return nil
+}
+
+// GormDataType tells GORM the column type.
+func (JSONRaw) GormDataType() string { return "jsonb" }
+
+// String returns the raw JSON text.
+func (r JSONRaw) String() string { return string(r) }
+
 // ─── array literal codec ────────────────────────────────────────────
 
 func toString(src any) (string, error) {

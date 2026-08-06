@@ -23,6 +23,9 @@ type Handlers struct {
 	Company   *handler.CompanyHandler
 	File      *handler.FileHandler
 	Reference *handler.ReferenceHandler
+	Load      *handler.LoadHandler
+	Booking   *handler.BookingHandler
+	Trip      *handler.TripHandler
 }
 
 // Deps is everything route registration needs beyond the handlers.
@@ -45,6 +48,9 @@ func Register(app *fiber.App, h Handlers, d Deps) {
 	registerFileRoutes(v1, h, d)
 	registerDriverRoutes(v1, h, d)
 	registerCompanyRoutes(v1, h, d)
+	registerLoadRoutes(v1, h, d)
+	registerBookingRoutes(v1, h, d)
+	registerTripRoutes(v1, h, d)
 	registerAdminRoutes(v1, h, d)
 }
 
@@ -83,6 +89,7 @@ func registerReferenceRoutes(v1 fiber.Router, h Handlers, _ Deps) {
 	ref.Get("/regions", h.Reference.Regions)
 	ref.Get("/cities", h.Reference.Cities)
 	ref.Get("/vehicle-types", h.Reference.VehicleTypes)
+	ref.Get("/cargo-types", h.Load.CargoTypes)
 }
 
 // registerFileRoutes mounts uploads. Uploads are expensive, so they get their
@@ -129,6 +136,7 @@ func registerDriverRoutes(v1 fiber.Router, h Handlers, d Deps) {
 
 	// Registered last so /me is not swallowed by the :id pattern.
 	drivers.Get("/:id", d.Auth.Optional(), h.Driver.GetProfile)
+	drivers.Get("/:id/ratings", d.Auth.Optional(), h.Trip.DriverRatings)
 }
 
 // registerCompanyRoutes mounts /api/v1/companies.
@@ -149,6 +157,66 @@ func registerCompanyRoutes(v1 fiber.Router, h Handlers, d Deps) {
 	me.Delete("/members/:id", d.Auth.RequirePermission("companies.members"), h.Company.RemoveMember)
 
 	companies.Get("/:id", d.Auth.Optional(), h.Company.Get)
+	companies.Get("/:id/ratings", d.Auth.Optional(), h.Trip.CompanyRatings)
+}
+
+// registerLoadRoutes mounts /api/v1/loads — the marketplace itself.
+//
+// Fixed segments (/my, /saved) are declared before the /:id pattern so Fiber
+// does not match them as a load id.
+func registerLoadRoutes(v1 fiber.Router, h Handlers, d Deps) {
+	loads := v1.Group("/loads")
+
+	// A guest may browse the board; contact details are withheld by the usecase.
+	loads.Get("/", d.Auth.Optional(), h.Load.Search)
+
+	authed := loads.Group("", d.Auth.Authenticate())
+	authed.Get("/my", d.Auth.RequireCompany(), h.Load.ListMine)
+	authed.Get("/saved", h.Load.ListSaved)
+	authed.Post("/", d.Auth.RequirePermission("loads.create"), h.Load.Create)
+
+	authed.Put("/:id", d.Auth.RequirePermission("loads.update"), h.Load.Update)
+	authed.Delete("/:id", d.Auth.RequirePermission("loads.delete"), h.Load.Delete)
+	authed.Post("/:id/publish", d.Auth.RequirePermission("loads.publish"), h.Load.Publish)
+	authed.Post("/:id/unpublish", d.Auth.RequirePermission("loads.publish"), h.Load.Unpublish)
+	authed.Post("/:id/cancel", d.Auth.RequirePermission("loads.update"), h.Load.Cancel)
+	authed.Post("/:id/save", h.Load.Save)
+	authed.Delete("/:id/save", h.Load.Unsave)
+	authed.Post("/:id/reserve", d.Auth.RequirePermission("bookings.create"), h.Booking.Reserve)
+
+	loads.Get("/:id", d.Auth.Optional(), h.Load.Get)
+
+	searches := v1.Group("/saved-searches", d.Auth.Authenticate())
+	searches.Get("/", h.Load.ListSavedSearches)
+	searches.Post("/", h.Load.CreateSavedSearch)
+	searches.Delete("/:id", h.Load.DeleteSavedSearch)
+}
+
+// registerBookingRoutes mounts /api/v1/bookings.
+func registerBookingRoutes(v1 fiber.Router, h Handlers, d Deps) {
+	bookings := v1.Group("/bookings", d.Auth.Authenticate())
+
+	bookings.Get("/", d.Auth.RequirePermission("bookings.read"), h.Booking.ListMine)
+	bookings.Post("/offer", d.Auth.RequirePermission("bookings.create"), h.Booking.Offer)
+	bookings.Get("/:id", d.Auth.RequirePermission("bookings.read"), h.Booking.Get)
+	bookings.Post("/:id/respond", d.Auth.RequirePermission("bookings.respond"), h.Booking.Respond)
+	bookings.Post("/:id/withdraw", d.Auth.RequirePermission("bookings.cancel"), h.Booking.Withdraw)
+	bookings.Post("/:id/cancel", d.Auth.RequirePermission("bookings.cancel"), h.Booking.Cancel)
+}
+
+// registerTripRoutes mounts /api/v1/trips.
+func registerTripRoutes(v1 fiber.Router, h Handlers, d Deps) {
+	trips := v1.Group("/trips", d.Auth.Authenticate())
+
+	trips.Get("/", d.Auth.RequirePermission("trips.read"), h.Trip.ListMine)
+	trips.Get("/:id", d.Auth.RequirePermission("trips.read"), h.Trip.Get)
+	trips.Get("/:id/track", d.Auth.RequirePermission("trips.track"), h.Trip.Track)
+	trips.Post("/:id/advance", d.Auth.RequireDriver(), h.Trip.Advance)
+	trips.Post("/:id/confirm", d.Auth.RequireCompany(), h.Trip.Confirm)
+	trips.Post("/:id/cancel", d.Auth.RequirePermission("trips.cancel"), h.Trip.Cancel)
+	trips.Post("/:id/dispute", d.Auth.RequirePermission("complaints.create"), h.Trip.Dispute)
+	trips.Post("/:id/documents", d.Auth.RequirePermission("trips.update"), h.Trip.AddDocument)
+	trips.Post("/:id/rate", h.Trip.Rate)
 }
 
 // registerAdminRoutes mounts the moderation queues. Every route here requires

@@ -64,6 +64,13 @@ type Repositories struct {
 	Locations   domain.LocationRepository
 	Companies   domain.CompanyRepository
 	CompanyDocs domain.CompanyDocumentRepository
+	Loads       domain.LoadRepository
+	CargoTypes  domain.CargoTypeRepository
+	Saved       domain.SavedRepository
+	Bookings    domain.BookingRepository
+	Trips       domain.TripRepository
+	Ratings     domain.RatingRepository
+	Settings    domain.SettingsRepository
 }
 
 // Usecases groups the business-rule services.
@@ -73,6 +80,9 @@ type Usecases struct {
 	Driver    *usecase.DriverUsecase
 	Company   *usecase.CompanyUsecase
 	Reference *usecase.ReferenceUsecase
+	Load      *usecase.LoadUsecase
+	Booking   *usecase.BookingUsecase
+	Trip      *usecase.TripUsecase
 }
 
 // Handlers groups the HTTP handlers.
@@ -83,6 +93,9 @@ type Handlers struct {
 	Company   *handler.CompanyHandler
 	File      *handler.FileHandler
 	Reference *handler.ReferenceHandler
+	Load      *handler.LoadHandler
+	Booking   *handler.BookingHandler
+	Trip      *handler.TripHandler
 }
 
 // NewContainer builds every dependency, failing fast on any misconfiguration.
@@ -143,6 +156,13 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 		Locations:   repository.NewLocationRepository(db.DB),
 		Companies:   repository.NewCompanyRepository(db.DB),
 		CompanyDocs: repository.NewCompanyDocumentRepository(db.DB),
+		Loads:       repository.NewLoadRepository(db.DB),
+		CargoTypes:  repository.NewCargoTypeRepository(db.DB),
+		Saved:       repository.NewSavedRepository(db.DB),
+		Bookings:    repository.NewBookingRepository(db.DB),
+		Trips:       repository.NewTripRepository(db.DB),
+		Ratings:     repository.NewRatingRepository(db.DB),
+		Settings:    repository.NewSettingsRepository(db.DB, log),
 	}
 
 	authUsecase := usecase.NewAuthUsecase(
@@ -160,6 +180,27 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 		fileUsecase, repos.Tx, repos.Audit, redisCache, log,
 	)
 	referenceUsecase := usecase.NewReferenceUsecase(repos.Geo, redisCache, log)
+
+	// The realtime publisher and notifier arrive with the realtime module; the
+	// usecases treat both as optional so the marketplace works without them.
+	var eventPublisher domain.EventPublisher
+	var notifier domain.Notifier
+
+	loadUsecase := usecase.NewLoadUsecase(
+		repos.Loads, repos.CargoTypes, repos.Saved, repos.Bookings, repos.Companies,
+		repos.Drivers, repos.Vehicles, repos.Geo, fileUsecase, repos.Tx, repos.Audit,
+		eventPublisher, redisCache, log,
+	)
+	bookingUsecase := usecase.NewBookingUsecase(
+		repos.Bookings, repos.Loads, repos.Trips, repos.Drivers, repos.Vehicles,
+		repos.Companies, repos.Users, fileUsecase, repos.Tx, repos.Audit,
+		eventPublisher, notifier, log,
+	)
+	tripUsecase := usecase.NewTripUsecase(
+		repos.Trips, repos.Bookings, repos.Loads, repos.Drivers, repos.Companies,
+		repos.Ratings, repos.Locations, fileUsecase, repos.Settings, repos.Tx,
+		repos.Audit, eventPublisher, notifier, log,
+	)
 
 	authMiddleware := middleware.NewAuthMiddleware(tokens, repos.Users, redisCache, log)
 
@@ -180,6 +221,9 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 			Driver:    driverUsecase,
 			Company:   companyUsecase,
 			Reference: referenceUsecase,
+			Load:      loadUsecase,
+			Booking:   bookingUsecase,
+			Trip:      tripUsecase,
 		},
 		Handlers: Handlers{
 			Health:    handler.NewHealthHandler(db, redisCache, Version, cfg.App.Env),
@@ -188,6 +232,9 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 			Company:   handler.NewCompanyHandler(companyUsecase, v),
 			File:      handler.NewFileHandler(fileUsecase, v),
 			Reference: handler.NewReferenceHandler(referenceUsecase),
+			Load:      handler.NewLoadHandler(loadUsecase, v),
+			Booking:   handler.NewBookingHandler(bookingUsecase, v),
+			Trip:      handler.NewTripHandler(tripUsecase, v),
 		},
 		Auth: authMiddleware,
 	}, nil

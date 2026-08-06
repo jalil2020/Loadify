@@ -29,6 +29,7 @@ type Handlers struct {
 	Trip         *handler.TripHandler
 	Chat         *handler.ChatHandler
 	Notification *handler.NotificationHandler
+	Payment      *handler.PaymentHandler
 	// WS is the WebSocket entry point. It is nil when realtime is disabled, in
 	// which case the /ws route is simply not mounted.
 	WS *ws.Handler
@@ -59,8 +60,44 @@ func Register(app *fiber.App, h Handlers, d Deps) {
 	registerTripRoutes(v1, h, d)
 	registerChatRoutes(v1, h, d)
 	registerNotificationRoutes(v1, h, d)
+	registerPaymentRoutes(v1, h, d)
 	registerWebSocketRoutes(v1, h)
 	registerAdminRoutes(v1, h, d)
+}
+
+// registerPaymentRoutes mounts wallet, subscription and checkout endpoints.
+func registerPaymentRoutes(v1 fiber.Router, h Handlers, d Deps) {
+	// Provider callbacks are unauthenticated by necessity — the provider holds
+	// no token — and are protected by their per-provider signature check. The
+	// rate limit is generous because a provider may legitimately retry.
+	v1.Post("/payments/webhooks/:provider",
+		middleware.RateLimit(d.Cache, d.Log, "webhook", 600, time.Minute),
+		h.Payment.Webhook)
+
+	// The plan catalogue is public so the pricing page needs no account.
+	v1.Get("/plans", d.Auth.Optional(), h.Payment.ListPlans)
+	v1.Get("/payments/methods", h.Payment.PaymentMethods)
+
+	subscriptions := v1.Group("/subscriptions", d.Auth.Authenticate())
+	subscriptions.Get("/me", h.Payment.GetSubscription)
+	subscriptions.Get("/entitlements", h.Payment.Entitlements)
+	subscriptions.Post("/", d.Auth.RequirePermission("payments.manage"), h.Payment.Subscribe)
+	subscriptions.Post("/cancel", d.Auth.RequirePermission("payments.manage"), h.Payment.CancelSubscription)
+
+	wallet := v1.Group("/wallet", d.Auth.Authenticate(), d.Auth.RequirePermission("payments.read"))
+	wallet.Get("/", h.Payment.GetWallet)
+	wallet.Get("/transactions", h.Payment.ListTransactions)
+	wallet.Post("/topup", d.Auth.RequirePermission("payments.manage"), h.Payment.Topup)
+	wallet.Post("/payout", d.Auth.RequirePermission("payments.manage"), h.Payment.RequestPayout)
+
+	escrow := v1.Group("/escrow", d.Auth.Authenticate(), d.Auth.RequirePermission("payments.read"))
+	escrow.Post("/fund", d.Auth.RequirePermission("payments.escrow"), h.Payment.FundEscrow)
+	escrow.Get("/:trip_id", h.Payment.GetEscrow)
+
+	payments := v1.Group("/payments", d.Auth.Authenticate(), d.Auth.RequirePermission("payments.read"))
+	payments.Get("/orders", h.Payment.ListOrders)
+	payments.Get("/invoices", h.Payment.ListInvoices)
+	payments.Post("/refunds", h.Payment.RequestRefund)
 }
 
 // registerChatRoutes mounts /api/v1/chats.
@@ -291,4 +328,9 @@ func registerAdminRoutes(v1 fiber.Router, h Handlers, d Deps) {
 		d.Auth.RequirePermission("companies.verify"), h.Company.ReviewDocument)
 	admin.Post("/companies/:id/review",
 		d.Auth.RequirePermission("companies.verify"), h.Company.Review)
+
+	admin.Get("/refunds",
+		d.Auth.RequirePermission("payments.refund"), h.Payment.ListRefunds)
+	admin.Post("/refunds/:id/review",
+		d.Auth.RequirePermission("payments.refund"), h.Payment.ReviewRefund)
 }

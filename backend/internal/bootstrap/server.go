@@ -56,6 +56,7 @@ func NewFiberApp(c *Container) *fiber.App {
 		Trip:         c.Handlers.Trip,
 		Chat:         c.Handlers.Chat,
 		Notification: c.Handlers.Notification,
+		Payment:      c.Handlers.Payment,
 		WS:           c.Handlers.WS,
 	}, route.Deps{
 		Cfg:   c.Cfg,

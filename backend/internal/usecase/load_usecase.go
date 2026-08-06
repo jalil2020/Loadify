@@ -37,6 +37,7 @@ type LoadUsecase struct {
 	tx         domain.TxManager
 	audit      domain.AuditLogger
 	events     domain.EventPublisher
+	quota      QuotaChecker
 	cache      cache.Cache
 	log        logger.Logger
 }
@@ -64,6 +65,19 @@ func NewLoadUsecase(
 		files: files, tx: tx, audit: audit, events: events, cache: c, log: log,
 	}
 }
+
+// QuotaChecker enforces the company's plan limits.
+//
+// The load module depends on this one-method port rather than the payment
+// usecase, so publishing a load does not pull subscriptions into the marketplace
+// flow — and a deployment without plans simply leaves it nil.
+type QuotaChecker interface {
+	AssertCanPublishLoad(ctx context.Context, companyID uuid.UUID) error
+}
+
+// SetQuotaChecker attaches the plan-limit checker after construction, breaking
+// the cycle between the load and payment usecases.
+func (u *LoadUsecase) SetQuotaChecker(checker QuotaChecker) { u.quota = checker }
 
 // Viewer describes who is asking, which decides what a load response reveals.
 type Viewer struct {
@@ -615,6 +629,13 @@ func (u *LoadUsecase) assertCanPublish(ctx context.Context, companyID uuid.UUID,
 			Field:   "pickup_from",
 			Message: "The pickup date is in the past",
 		})
+	}
+	// The plan limit is checked before the duplicate check so an over-quota
+	// company is told to upgrade rather than being confused by a duplicate error.
+	if u.quota != nil {
+		if err := u.quota.AssertCanPublishLoad(ctx, companyID); err != nil {
+			return err
+		}
 	}
 	if load.DuplicateHash != nil {
 		existing, err := u.loads.FindDuplicate(ctx, companyID, *load.DuplicateHash)

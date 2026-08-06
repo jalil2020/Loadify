@@ -34,8 +34,23 @@ type TripUsecase struct {
 	audit     domain.AuditLogger
 	events    domain.EventPublisher
 	notifier  domain.Notifier
+	settler   EscrowSettler
 	log       logger.Logger
 }
+
+// EscrowSettler releases or refunds a trip's held funds.
+//
+// The trip flow depends on this two-method port rather than the payment usecase,
+// so completing a delivery does not drag checkout, providers and plans into the
+// trip module — and a deployment without escrow simply leaves it nil.
+type EscrowSettler interface {
+	ReleaseEscrow(ctx context.Context, tripID uuid.UUID, actorID *uuid.UUID) error
+	RefundEscrow(ctx context.Context, tripID uuid.UUID, actorID *uuid.UUID, reason string) error
+}
+
+// SetSettler attaches the escrow settler after construction, breaking the cycle
+// between the trip and payment usecases.
+func (u *TripUsecase) SetSettler(settler EscrowSettler) { u.settler = settler }
 
 // NewTripUsecase wires the trip usecase.
 func NewTripUsecase(
@@ -271,6 +286,15 @@ func (u *TripUsecase) Cancel(ctx context.Context, userID, tripID uuid.UUID, req 
 	})
 	if err != nil {
 		return err
+	}
+
+	// A cancelled trip returns any secured funds to the shipper: nothing was
+	// carried, so nobody is owed.
+	if u.settler != nil {
+		if err := u.settler.RefundEscrow(ctx, tripID, &userID, req.Reason); err != nil {
+			u.log.Error("refunding escrow for a cancelled trip failed",
+				logger.String("trip_id", tripID.String()), logger.Err(err))
+		}
 	}
 
 	_ = u.audit.Record(ctx, domain.AuditEntry{
@@ -675,6 +699,16 @@ func (u *TripUsecase) complete(ctx context.Context, trip *domain.Trip, actorID *
 			"auto_confirmed":    actorID == nil,
 		},
 	})
+
+	// Release the escrow after the trip is committed, not inside the same
+	// transaction: the trip is closed either way, and a settlement failure must
+	// be retryable without reopening a completed shipment.
+	if u.settler != nil {
+		if err := u.settler.ReleaseEscrow(ctx, trip.ID, actorID); err != nil {
+			u.log.Error("releasing escrow for a completed trip failed",
+				logger.String("trip_id", trip.ID.String()), logger.Err(err))
+		}
+	}
 
 	previous := trip.Status
 	trip.Status = domain.TripCompleted

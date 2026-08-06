@@ -125,17 +125,46 @@ type MapsConfig struct {
 	GoogleAPIKey string
 }
 
+// PaymentConfig groups the checkout providers. Each provider is configured
+// independently so one can be enabled without the others.
 type PaymentConfig struct {
 	CommissionPercent float64
-	ClickMerchantID   string
-	ClickServiceID    string
-	ClickSecretKey    string
-	ClickMerchantUser string
-	PaymeMerchantID   string
-	PaymeSecretKey    string
-	UzumMerchantID    string
-	UzumSecretKey     string
+	Click             ClickConfig
+	Payme             PaymeConfig
+	Uzum              UzumConfig
 }
+
+// ClickConfig configures the Click merchant integration.
+type ClickConfig struct {
+	MerchantID   string
+	ServiceID    string
+	SecretKey    string
+	MerchantUser string
+}
+
+// Enabled reports whether Click can accept payments.
+func (c ClickConfig) Enabled() bool {
+	return c.MerchantID != "" && c.ServiceID != "" && c.SecretKey != ""
+}
+
+// PaymeConfig configures the Payme merchant integration.
+type PaymeConfig struct {
+	MerchantID string
+	SecretKey  string
+}
+
+// Enabled reports whether Payme can accept payments.
+func (c PaymeConfig) Enabled() bool { return c.MerchantID != "" && c.SecretKey != "" }
+
+// UzumConfig configures the Uzum Bank merchant integration.
+type UzumConfig struct {
+	MerchantID      string
+	MerchantService string
+	SecretKey       string
+}
+
+// Enabled reports whether Uzum can accept payments.
+func (c UzumConfig) Enabled() bool { return c.MerchantID != "" && c.SecretKey != "" }
 
 // Load reads .env (when present) and the process environment, then validates.
 func Load(envFiles ...string) (*Config, error) {
@@ -222,14 +251,21 @@ func Load(envFiles ...string) (*Config, error) {
 		},
 		Payment: PaymentConfig{
 			CommissionPercent: getFloat("PLATFORM_COMMISSION_PERCENT", 5),
-			ClickMerchantID:   getString("CLICK_MERCHANT_ID", ""),
-			ClickServiceID:    getString("CLICK_SERVICE_ID", ""),
-			ClickSecretKey:    getString("CLICK_SECRET_KEY", ""),
-			ClickMerchantUser: getString("CLICK_MERCHANT_USER_ID", ""),
-			PaymeMerchantID:   getString("PAYME_MERCHANT_ID", ""),
-			PaymeSecretKey:    getString("PAYME_SECRET_KEY", ""),
-			UzumMerchantID:    getString("UZUM_MERCHANT_ID", ""),
-			UzumSecretKey:     getString("UZUM_SECRET_KEY", ""),
+			Click: ClickConfig{
+				MerchantID:   getString("CLICK_MERCHANT_ID", ""),
+				ServiceID:    getString("CLICK_SERVICE_ID", ""),
+				SecretKey:    getString("CLICK_SECRET_KEY", ""),
+				MerchantUser: getString("CLICK_MERCHANT_USER_ID", ""),
+			},
+			Payme: PaymeConfig{
+				MerchantID: getString("PAYME_MERCHANT_ID", ""),
+				SecretKey:  getString("PAYME_SECRET_KEY", ""),
+			},
+			Uzum: UzumConfig{
+				MerchantID:      getString("UZUM_MERCHANT_ID", ""),
+				MerchantService: getString("UZUM_MERCHANT_SERVICE_ID", ""),
+				SecretKey:       getString("UZUM_SECRET_KEY", ""),
+			},
 		},
 	}
 

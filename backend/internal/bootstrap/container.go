@@ -14,6 +14,7 @@ import (
 	"github.com/loadify/backend/internal/domain"
 	"github.com/loadify/backend/internal/infrastructure/cache"
 	"github.com/loadify/backend/internal/infrastructure/database"
+	"github.com/loadify/backend/internal/infrastructure/payment"
 	"github.com/loadify/backend/internal/infrastructure/push"
 	"github.com/loadify/backend/internal/infrastructure/sms"
 	"github.com/loadify/backend/internal/infrastructure/storage"
@@ -78,6 +79,9 @@ type Repositories struct {
 	Settings      domain.SettingsRepository
 	Chat          domain.ChatRepository
 	Notifications domain.NotificationRepository
+	Wallets       domain.WalletRepository
+	Payments      domain.PaymentRepository
+	Subscriptions domain.SubscriptionRepository
 }
 
 // Usecases groups the business-rule services.
@@ -92,6 +96,8 @@ type Usecases struct {
 	Trip         *usecase.TripUsecase
 	Chat         *usecase.ChatUsecase
 	Notification *usecase.NotificationUsecase
+	Wallet       *usecase.WalletUsecase
+	Payment      *usecase.PaymentUsecase
 }
 
 // Handlers groups the HTTP handlers.
@@ -107,6 +113,7 @@ type Handlers struct {
 	Trip         *handler.TripHandler
 	Chat         *handler.ChatHandler
 	Notification *handler.NotificationHandler
+	Payment      *handler.PaymentHandler
 	WS           *ws.Handler
 }
 
@@ -177,6 +184,9 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 		Settings:      repository.NewSettingsRepository(db.DB, log),
 		Chat:          repository.NewChatRepository(db.DB),
 		Notifications: repository.NewNotificationRepository(db.DB),
+		Wallets:       repository.NewWalletRepository(db.DB),
+		Payments:      repository.NewPaymentRepository(db.DB),
+		Subscriptions: repository.NewSubscriptionRepository(db.DB),
 	}
 
 	// The realtime hub and its publisher must exist before any usecase that
@@ -232,6 +242,24 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 		repos.Audit, eventPublisher, notificationUsecase, log,
 	)
 
+	walletUsecase := usecase.NewWalletUsecase(
+		repos.Wallets, repos.Payments, repos.Trips, repos.Drivers, repos.Companies,
+		repos.Settings, repos.Tx, repos.Audit, notificationUsecase, log,
+	)
+	gatewayRegistry := payment.NewRegistry(cfg.Payment, log)
+	paymentUsecase := usecase.NewPaymentUsecase(
+		repos.Payments, repos.Subscriptions, repos.Wallets, walletUsecase,
+		repos.Loads, repos.Companies, repos.Users, gatewayRegistry,
+		repos.Tx, repos.Audit, notificationUsecase, log,
+	)
+
+	// Settlement is wired after both usecases exist: a completed trip releases
+	// its escrow, and a refunded dispute returns it. Injecting the settler
+	// rather than the whole payment usecase keeps the trip flow unaware of
+	// checkout, providers and plans.
+	tripUsecase.SetSettler(walletUsecase)
+	loadUsecase.SetQuotaChecker(paymentUsecase)
+
 	// The socket router is built last: it depends on the chat, driver and trip
 	// usecases, which in turn depend on the hub the router drives.
 	wsRouter := ws.NewRouter(hub, chatUsecase, driverUsecase, tripUsecase, log)
@@ -261,6 +289,8 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 			Trip:         tripUsecase,
 			Chat:         chatUsecase,
 			Notification: notificationUsecase,
+			Wallet:       walletUsecase,
+			Payment:      paymentUsecase,
 		},
 		Handlers: Handlers{
 			Health:       handler.NewHealthHandler(db, redisCache, Version, cfg.App.Env),
@@ -274,6 +304,7 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 			Trip:         handler.NewTripHandler(tripUsecase, v),
 			Chat:         handler.NewChatHandler(chatUsecase, v),
 			Notification: handler.NewNotificationHandler(notificationUsecase, chatUsecase, v),
+			Payment:      handler.NewPaymentHandler(paymentUsecase, walletUsecase, v),
 			WS:           wsHandler,
 		},
 		Hub:  hub,

@@ -82,6 +82,9 @@ type Repositories struct {
 	Wallets       domain.WalletRepository
 	Payments      domain.PaymentRepository
 	Subscriptions domain.SubscriptionRepository
+	Complaints    domain.ComplaintRepository
+	AuditRead     domain.AuditRepository
+	Analytics     domain.AnalyticsRepository
 }
 
 // Usecases groups the business-rule services.
@@ -98,6 +101,7 @@ type Usecases struct {
 	Notification *usecase.NotificationUsecase
 	Wallet       *usecase.WalletUsecase
 	Payment      *usecase.PaymentUsecase
+	Admin        *usecase.AdminUsecase
 }
 
 // Handlers groups the HTTP handlers.
@@ -114,6 +118,7 @@ type Handlers struct {
 	Chat         *handler.ChatHandler
 	Notification *handler.NotificationHandler
 	Payment      *handler.PaymentHandler
+	Admin        *handler.AdminHandler
 	WS           *ws.Handler
 }
 
@@ -187,6 +192,9 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 		Wallets:       repository.NewWalletRepository(db.DB),
 		Payments:      repository.NewPaymentRepository(db.DB),
 		Subscriptions: repository.NewSubscriptionRepository(db.DB),
+		Complaints:    repository.NewComplaintRepository(db.DB),
+		AuditRead:     repository.NewAuditReadRepository(db.DB),
+		Analytics:     repository.NewAnalyticsRepository(db.DB),
 	}
 
 	// The realtime hub and its publisher must exist before any usecase that
@@ -260,6 +268,15 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 	tripUsecase.SetSettler(walletUsecase)
 	loadUsecase.SetQuotaChecker(paymentUsecase)
 
+	adminUsecase := usecase.NewAdminUsecase(
+		repos.Users, repos.Roles, repos.Drivers, repos.Companies, repos.Trips,
+		repos.Complaints, repos.AuditRead, repos.Analytics, repos.Settings,
+		repos.Sessions, fileUsecase, repos.Tx, repos.Audit, notificationUsecase, log,
+	)
+	// Resolving a dispute can move money, so the moderator gets the same
+	// settlement port the trip flow uses.
+	adminUsecase.SetSettler(walletUsecase)
+
 	// The socket router is built last: it depends on the chat, driver and trip
 	// usecases, which in turn depend on the hub the router drives.
 	wsRouter := ws.NewRouter(hub, chatUsecase, driverUsecase, tripUsecase, log)
@@ -291,6 +308,7 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 			Notification: notificationUsecase,
 			Wallet:       walletUsecase,
 			Payment:      paymentUsecase,
+			Admin:        adminUsecase,
 		},
 		Handlers: Handlers{
 			Health:       handler.NewHealthHandler(db, redisCache, Version, cfg.App.Env),
@@ -305,6 +323,7 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 			Chat:         handler.NewChatHandler(chatUsecase, v),
 			Notification: handler.NewNotificationHandler(notificationUsecase, chatUsecase, v),
 			Payment:      handler.NewPaymentHandler(paymentUsecase, walletUsecase, v),
+			Admin:        handler.NewAdminHandler(adminUsecase, v),
 			WS:           wsHandler,
 		},
 		Hub:  hub,

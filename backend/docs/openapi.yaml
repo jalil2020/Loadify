@@ -1,0 +1,835 @@
+openapi: 3.0.3
+
+info:
+  title: Loadify API
+  version: "1.0.0"
+  description: |
+    Freight marketplace connecting logistics companies and truck drivers.
+
+    ## Conventions
+
+    - **Money** is always an integer in **minor units** (tiyin for UZS, cents for
+      USD) with an explicit `currency` field. Never send a decimal amount.
+    - **Timestamps** are RFC 3339 in UTC.
+    - **Coordinates** are WGS 84 (`{"lat": 41.2995, "lng": 69.2401}`).
+    - **Every response** uses the envelope below; list endpoints add `meta`.
+    - **Pagination**: `?page=1&per_page=20` (max 100), `?sort=field&order=desc`
+      or `?sort=-field`. Sort fields are allowlisted per endpoint; an unknown
+      value falls back to the default order rather than erroring.
+    - **Localisation**: send `Accept-Language: uz | ru | en`.
+
+    ## Authentication
+
+    Send `Authorization: Bearer <access_token>`. Access tokens last 15 minutes;
+    refresh with `POST /auth/refresh`, which rotates the refresh token. Reusing
+    an already-rotated refresh token revokes the whole token family and returns
+    `TOKEN_REUSE_DETECTED` — treat that as "sign in again".
+
+    The WebSocket endpoint accepts the token as `?token=` because browsers
+    cannot set headers on a handshake.
+  contact:
+    name: Loadify Engineering
+  license:
+    name: Proprietary
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local
+  - url: https://api.loadify.uz/api/v1
+    description: Production
+
+tags:
+  - name: Auth
+  - name: Reference
+  - name: Files
+  - name: Drivers
+  - name: Companies
+  - name: Loads
+  - name: Bookings
+  - name: Trips
+  - name: Chat
+  - name: Notifications
+  - name: Payments
+  - name: Admin
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register and receive an SMS code
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, password, role]
+              properties:
+                phone: { type: string, example: "+998901234567" }
+                password: { type: string, format: password, minLength: 8 }
+                first_name: { type: string }
+                last_name: { type: string }
+                role:
+                  type: string
+                  enum: [driver, company]
+                locale: { type: string, enum: [uz, ru, en] }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "409":
+          description: The phone number is already registered
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /auth/verify-otp:
+    post:
+      tags: [Auth]
+      summary: Confirm the SMS code
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, code, purpose]
+              properties:
+                phone: { type: string }
+                code: { type: string, example: "123456" }
+                purpose:
+                  type: string
+                  enum: [register, login, reset_password, change_phone]
+      responses:
+        "200":
+          description: Verified; tokens are returned for register and login
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/TokenPair" }
+        "422":
+          description: The code is wrong or expired
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Sign in with phone and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, password]
+              properties:
+                phone: { type: string }
+                password: { type: string, format: password }
+      responses:
+        "200":
+          description: Signed in
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/TokenPair" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "423":
+          description: Locked after too many failed attempts
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate the token pair
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200":
+          description: A new pair; the presented refresh token is now invalid
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/TokenPair" }
+        "401":
+          description: |
+            Invalid, expired, or reused. `TOKEN_REUSE_DETECTED` means the whole
+            family was revoked as a theft response — sign in again.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: The signed-in principal
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /loads:
+    get:
+      tags: [Loads]
+      summary: Search the marketplace
+      description: |
+        Open to guests, who see the board without contact details. A driver's
+        phone reveals the shipper's number only after a live booking exists.
+      security:
+        - bearerAuth: []
+        - {}
+      parameters:
+        - { in: query, name: pickup_region_id, schema: { type: array, items: { type: string, format: uuid } } }
+        - { in: query, name: delivery_region_id, schema: { type: array, items: { type: string, format: uuid } } }
+        - { in: query, name: pickup_lat, schema: { type: number, format: double } }
+        - { in: query, name: pickup_lng, schema: { type: number, format: double } }
+        - { in: query, name: pickup_radius_km, schema: { type: number, default: 100, maximum: 1000 } }
+        - { in: query, name: vehicle_type, schema: { type: array, items: { $ref: "#/components/schemas/VehicleType" } } }
+        - { in: query, name: min_weight_kg, schema: { type: integer } }
+        - { in: query, name: max_weight_kg, schema: { type: integer } }
+        - { in: query, name: min_price, schema: { type: integer, description: minor units } }
+        - { in: query, name: max_price, schema: { type: integer, description: minor units } }
+        - { in: query, name: requires_adr, schema: { type: boolean } }
+        - { in: query, name: requires_refrigeration, schema: { type: boolean } }
+        - in: query
+          name: fits_my_vehicle
+          schema: { type: boolean }
+          description: >
+            Restrict to loads the driver's primary approved truck can legally
+            carry — capacity, volume, body type, ADR, temperature and dimensions.
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PerPage" }
+        - { $ref: "#/components/parameters/Sort" }
+      responses:
+        "200":
+          description: A page of loads
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Load" }
+    post:
+      tags: [Loads]
+      summary: Create a shipment
+      description: >
+        Requires `loads.create`. Set `publish: true` to go straight to the
+        board; the company must be verified and within its plan's active-load
+        limit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SaveLoadRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "402":
+          description: The plan's active-load limit is reached
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /loads/{id}:
+    get:
+      tags: [Loads]
+      summary: One load
+      security:
+        - bearerAuth: []
+        - {}
+      parameters: [{ $ref: "#/components/parameters/PathID" }]
+      responses:
+        "200":
+          description: The load
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Load" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /loads/{id}/reserve:
+    post:
+      tags: [Bookings]
+      summary: Reserve a load as a driver
+      description: |
+        Creates a booking in `pending` and notifies the shipper. Rejected when
+        the driver is unverified, the chosen truck does not meet the load's
+        requirements, a live booking already exists for this pair, or the driver
+        has an overlapping trip.
+      parameters: [{ $ref: "#/components/parameters/PathID" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                vehicle_id: { type: string, format: uuid }
+                offered_price: { type: integer, description: minor units }
+                message: { type: string, maxLength: 1000 }
+      responses:
+        "201":
+          description: The booking
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Booking" }
+        "403":
+          description: DRIVER_NOT_VERIFIED or NO_APPROVED_VEHICLE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "409":
+          description: BOOKING_EXISTS, LOAD_NOT_PUBLISHED or TRIP_CONFLICT
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "422":
+          description: VEHICLE_UNSUITABLE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /bookings/{id}/respond:
+    post:
+      tags: [Bookings]
+      summary: Accept or reject a booking
+      description: >
+        Only the side that did **not** initiate may respond. Accepting creates
+        the trip and closes every other open booking on the load in the same
+        transaction.
+      parameters: [{ $ref: "#/components/parameters/PathID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [accept]
+              properties:
+                accept: { type: boolean }
+                agreed_price: { type: integer, description: minor units }
+                message: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: Already answered, or the load was assigned elsewhere
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /trips/{id}/advance:
+    post:
+      tags: [Trips]
+      summary: Move a trip forward
+      description: |
+        Driver-only. Valid transitions:
+        `created → en_route_to_pickup → at_pickup → loaded → in_transit →
+        at_delivery → delivered`.
+
+        A driver cannot set `completed` (that is the shipper confirming) or
+        `cancelled` (that has commercial consequences). Once the cargo is
+        `loaded` the trip can no longer be cancelled — it must be delivered or
+        disputed.
+      parameters: [{ $ref: "#/components/parameters/PathID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [en_route_to_pickup, at_pickup, loaded, in_transit, at_delivery, delivered]
+                location: { $ref: "#/components/schemas/Point" }
+                note: { type: string }
+                document_file_ids:
+                  type: array
+                  items: { type: string, format: uuid }
+                odometer_km: { type: number, format: double }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        "403":
+          description: Not your trip, or not a driver-settable status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "409":
+          description: INVALID_STATUS_TRANSITION
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /trips/{id}/confirm:
+    post:
+      tags: [Trips]
+      summary: Confirm delivery and close the trip
+      description: >
+        Company-side. Takes the platform commission and releases the escrow to
+        the driver. A delivered trip the shipper never confirms is auto-closed
+        after 72 hours so the driver is not left unpaid.
+      parameters: [{ $ref: "#/components/parameters/PathID" }]
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /trips/{id}/track:
+    get:
+      tags: [Trips]
+      summary: Live position and travelled route
+      parameters: [{ $ref: "#/components/parameters/PathID" }]
+      responses:
+        "200":
+          description: Tracking data
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          trip_id: { type: string, format: uuid }
+                          status: { type: string }
+                          current_location: { $ref: "#/components/schemas/Point" }
+                          updated_at: { type: string, format: date-time }
+                          eta_at: { type: string, format: date-time }
+                          distance_done_km: { type: number, format: double }
+                          route:
+                            type: array
+                            items: { $ref: "#/components/schemas/Point" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /wallet:
+    get:
+      tags: [Payments]
+      summary: Balance
+      description: >
+        A company member sees the company wallet; everyone else their own.
+        `available` is `balance - held_balance`; held funds are committed to an
+        escrow and cannot be spent.
+      responses:
+        "200":
+          description: The wallet
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Wallet" }
+
+  /escrow/fund:
+    post:
+      tags: [Payments]
+      summary: Secure a trip's price
+      description: >
+        Holds the agreed amount in the shipper's wallet and moves it to the
+        clearing account. Released to the driver net of commission on delivery
+        confirmation, refunded in full if the trip is cancelled.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [trip_id]
+              properties:
+                trip_id: { type: string, format: uuid }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "402":
+          description: INSUFFICIENT_FUNDS
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /payments/webhooks/{provider}:
+    post:
+      tags: [Payments]
+      summary: Provider callback
+      description: |
+        Unauthenticated by necessity — the provider holds no token — and
+        protected entirely by the per-provider signature check.
+
+        Always answers `200` with a provider-shaped body, because a non-200
+        makes most providers retry indefinitely. A rejected signature is
+        recorded and reported inside the body. Replays are no-ops.
+      security: []
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema: { type: string, enum: [click, payme, uzum] }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { type: object } }
+          application/x-www-form-urlencoded: { schema: { type: object } }
+      responses:
+        "200":
+          description: Provider-shaped acknowledgement
+          content:
+            application/json: { schema: { type: object } }
+
+  /admin/dashboard:
+    get:
+      tags: [Admin]
+      summary: Live marketplace snapshot
+      parameters:
+        - { in: query, name: from, schema: { type: string, format: date-time } }
+        - { in: query, name: to, schema: { type: string, format: date-time } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    PathID:
+      in: path
+      name: id
+      required: true
+      schema: { type: string, format: uuid }
+    Page:
+      in: query
+      name: page
+      schema: { type: integer, minimum: 1, default: 1 }
+    PerPage:
+      in: query
+      name: per_page
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Sort:
+      in: query
+      name: sort
+      schema: { type: string }
+      description: >
+        Allowlisted per endpoint. Prefix with `-` for descending, or pass
+        `order=asc|desc`. An unknown field falls back to the default order.
+
+  responses:
+    OK:
+      description: Success
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Envelope" }
+    Created:
+      description: Created
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Envelope" }
+    Unauthorized:
+      description: Missing, invalid or expired token
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    Forbidden:
+      description: Authenticated but not permitted
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    Conflict:
+      description: Conflicts with the current state
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    ValidationError:
+      description: Validation failed; `details` names the fields
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    RateLimited:
+      description: Too many requests
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  schemas:
+    Envelope:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data: {}
+      required: [success]
+
+    PaginatedEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            meta:
+              type: object
+              properties:
+                page: { type: integer }
+                per_page: { type: integer }
+                total: { type: integer, format: int64 }
+                total_pages: { type: integer }
+
+    ErrorEnvelope:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Stable machine code; branch on this, not the message.
+              example: VALIDATION_ERROR
+            message: { type: string }
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  message: { type: string }
+        trace_id:
+          type: string
+          description: Quote this when reporting a problem.
+
+    TokenPair:
+      type: object
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+        token_type: { type: string, example: Bearer }
+        expires_in: { type: integer, example: 900 }
+        expires_at: { type: string, format: date-time }
+
+    Point:
+      type: object
+      required: [lat, lng]
+      properties:
+        lat: { type: number, format: double, example: 41.2995 }
+        lng: { type: number, format: double, example: 69.2401 }
+
+    VehicleType:
+      type: string
+      enum:
+        [tent, refrigerator, isothermal, flatbed, container, tanker,
+         car_carrier, grain, dump, van, lowboy, other]
+
+    LoadStatus:
+      type: string
+      enum:
+        [draft, published, reserved, assigned, in_transit, delivered,
+         completed, cancelled, expired]
+
+    TripStatus:
+      type: string
+      enum:
+        [created, en_route_to_pickup, at_pickup, loaded, in_transit,
+         at_delivery, delivered, completed, cancelled, disputed]
+
+    BookingStatus:
+      type: string
+      enum: [pending, offered, accepted, rejected, withdrawn, expired, cancelled]
+
+    Address:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        region_id: { type: string, format: uuid }
+        region_name: { type: string }
+        city_name: { type: string }
+        line1: { type: string }
+        formatted: { type: string }
+        location: { $ref: "#/components/schemas/Point" }
+        contact_name: { type: string, nullable: true }
+        contact_phone: { type: string, nullable: true }
+
+    SaveLoadRequest:
+      type: object
+      required: [title, weight_kg, pickup_address, delivery_address, pickup_from, price_amount]
+      properties:
+        title: { type: string, minLength: 3, maxLength: 255 }
+        description: { type: string }
+        cargo_type_id: { type: string, format: uuid }
+        weight_kg: { type: integer, minimum: 1, maximum: 100000 }
+        volume_m3: { type: number, format: double }
+        pickup_address: { $ref: "#/components/schemas/AddressRequest" }
+        delivery_address: { $ref: "#/components/schemas/AddressRequest" }
+        pickup_from: { type: string, format: date-time }
+        pickup_to: { type: string, format: date-time }
+        delivery_from: { type: string, format: date-time }
+        delivery_to: { type: string, format: date-time }
+        required_vehicle_type: { $ref: "#/components/schemas/VehicleType" }
+        requires_adr: { type: boolean }
+        requires_refrigeration: { type: boolean }
+        temp_min_c: { type: integer }
+        temp_max_c: { type: integer }
+        requires_tail_lift: { type: boolean }
+        price_amount:
+          type: integer
+          description: Minor units (tiyin for UZS).
+          example: 5000000
+        price_currency: { type: string, example: UZS }
+        price_type: { type: string, enum: [fixed, negotiable, per_km] }
+        payment_terms:
+          type: string
+          enum: [on_loading, on_delivery, prepayment, deferred]
+        photo_file_ids:
+          type: array
+          maxItems: 10
+          items: { type: string, format: uuid }
+        is_urgent: { type: boolean }
+        publish:
+          type: boolean
+          description: Publish immediately instead of saving a draft.
+
+    AddressRequest:
+      type: object
+      required: [line1, location]
+      properties:
+        region_id: { type: string, format: uuid }
+        city_id: { type: string, format: uuid }
+        line1: { type: string }
+        formatted: { type: string }
+        google_place_id: { type: string }
+        location: { $ref: "#/components/schemas/Point" }
+        contact_name: { type: string }
+        contact_phone: { type: string }
+
+    Load:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        reference_no: { type: string, example: LD-2601-00042 }
+        company_id: { type: string, format: uuid }
+        title: { type: string }
+        weight_kg: { type: integer }
+        volume_m3: { type: number, format: double, nullable: true }
+        pickup_address: { $ref: "#/components/schemas/Address" }
+        delivery_address: { $ref: "#/components/schemas/Address" }
+        pickup_from: { type: string, format: date-time }
+        distance_km: { type: number, format: double, nullable: true }
+        pickup_distance_km:
+          type: number
+          format: double
+          nullable: true
+          description: Distance from the searcher's point, when one was given.
+        required_vehicle_type: { $ref: "#/components/schemas/VehicleType" }
+        requires_adr: { type: boolean }
+        requires_refrigeration: { type: boolean }
+        price_amount: { type: integer, description: minor units }
+        price_currency: { type: string }
+        price_per_km: { type: number, format: double, nullable: true }
+        payment_terms: { type: string }
+        status: { $ref: "#/components/schemas/LoadStatus" }
+        published_at: { type: string, format: date-time, nullable: true }
+        expires_at: { type: string, format: date-time, nullable: true }
+        views_count: { type: integer }
+        is_featured: { type: boolean }
+        is_urgent: { type: boolean }
+        is_saved: { type: boolean }
+        company:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            brand_name: { type: string }
+            logo_url: { type: string, nullable: true }
+            rating: { type: number, format: double }
+            is_verified: { type: boolean }
+            phone:
+              type: string
+              nullable: true
+              description: >
+                Present only for viewers with a live booking, company membership
+                or an admin role.
+        my_booking:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/BookingSummary" }]
+
+    BookingSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/BookingStatus" }
+        initiated_by: { type: string, enum: [driver, company] }
+        price: { type: integer }
+        currency: { type: string }
+        expires_at: { type: string, format: date-time, nullable: true }
+
+    Booking:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        load_id: { type: string, format: uuid }
+        driver_id: { type: string, format: uuid }
+        company_id: { type: string, format: uuid }
+        vehicle_id: { type: string, format: uuid, nullable: true }
+        initiated_by: { type: string, enum: [driver, company] }
+        status: { $ref: "#/components/schemas/BookingStatus" }
+        offered_price: { type: integer, nullable: true }
+        agreed_price: { type: integer, nullable: true }
+        currency: { type: string }
+        expires_at: { type: string, format: date-time, nullable: true }
+        trip_id: { type: string, format: uuid, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    Wallet:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        currency: { type: string }
+        balance: { type: integer, description: minor units }
+        held_balance: { type: integer, description: committed to an escrow }
+        available: { type: integer, description: balance minus held_balance }
+        status: { type: string, enum: [active, frozen, closed] }

@@ -30,6 +30,7 @@ type Handlers struct {
 	Chat         *handler.ChatHandler
 	Notification *handler.NotificationHandler
 	Payment      *handler.PaymentHandler
+	Admin        *handler.AdminHandler
 	// WS is the WebSocket entry point. It is nil when realtime is disabled, in
 	// which case the /ws route is simply not mounted.
 	WS *ws.Handler
@@ -61,6 +62,7 @@ func Register(app *fiber.App, h Handlers, d Deps) {
 	registerChatRoutes(v1, h, d)
 	registerNotificationRoutes(v1, h, d)
 	registerPaymentRoutes(v1, h, d)
+	registerSupportRoutes(v1, h, d)
 	registerWebSocketRoutes(v1, h)
 	registerAdminRoutes(v1, h, d)
 }
@@ -178,6 +180,17 @@ func registerReferenceRoutes(v1 fiber.Router, h Handlers, _ Deps) {
 	ref.Get("/cargo-types", h.Load.CargoTypes)
 }
 
+// registerSupportRoutes mounts complaints and public settings.
+//
+// Filing a complaint is a right every authenticated user has; reviewing them is
+// what needs a permission, and that lives on the admin group.
+func registerSupportRoutes(v1 fiber.Router, h Handlers, d Deps) {
+	v1.Get("/settings", h.Admin.PublicSettings)
+	v1.Post("/complaints",
+		d.Auth.Authenticate(), d.Auth.RequirePermission("complaints.create"),
+		h.Admin.FileComplaint)
+}
+
 // registerFileRoutes mounts uploads. Uploads are expensive, so they get their
 // own limit well below the global one.
 func registerFileRoutes(v1 fiber.Router, h Handlers, d Deps) {
@@ -219,6 +232,7 @@ func registerDriverRoutes(v1 fiber.Router, h Handlers, d Deps) {
 
 	me.Get("/preferences", h.Driver.GetPreferences)
 	me.Put("/preferences", d.Auth.RequireDriver(), h.Driver.SavePreferences)
+	me.Get("/report", h.Admin.DriverReport)
 
 	// Registered last so /me is not swallowed by the :id pattern.
 	drivers.Get("/:id", d.Auth.Optional(), h.Driver.GetProfile)
@@ -241,6 +255,7 @@ func registerCompanyRoutes(v1 fiber.Router, h Handlers, d Deps) {
 	me.Post("/members", d.Auth.RequirePermission("companies.members"), h.Company.InviteMember)
 	me.Patch("/members/:id", d.Auth.RequirePermission("companies.members"), h.Company.UpdateMember)
 	me.Delete("/members/:id", d.Auth.RequirePermission("companies.members"), h.Company.RemoveMember)
+	me.Get("/report", h.Admin.CompanyReport)
 
 	companies.Get("/:id", d.Auth.Optional(), h.Company.Get)
 	companies.Get("/:id/ratings", d.Auth.Optional(), h.Trip.CompanyRatings)
@@ -333,4 +348,31 @@ func registerAdminRoutes(v1 fiber.Router, h Handlers, d Deps) {
 		d.Auth.RequirePermission("payments.refund"), h.Payment.ListRefunds)
 	admin.Post("/refunds/:id/review",
 		d.Auth.RequirePermission("payments.refund"), h.Payment.ReviewRefund)
+
+	admin.Get("/dashboard", d.Auth.RequirePermission("admin.dashboard"), h.Admin.Dashboard)
+	admin.Get("/analytics/series", d.Auth.RequirePermission("admin.reports"), h.Admin.Series)
+	admin.Get("/analytics/corridors", d.Auth.RequirePermission("admin.reports"), h.Admin.TopCorridors)
+
+	admin.Get("/users", d.Auth.RequirePermission("admin.users"), h.Admin.ListUsers)
+	admin.Get("/users/:id", d.Auth.RequirePermission("admin.users"), h.Admin.GetUser)
+	admin.Post("/users/:id/block", d.Auth.RequirePermission("admin.users"), h.Admin.BlockUser)
+	admin.Post("/users/:id/unblock", d.Auth.RequirePermission("admin.users"), h.Admin.UnblockUser)
+
+	// Granting a role is the one action that lets somebody grant themselves
+	// everything else, so it is super-admin only.
+	admin.Post("/users/:id/roles", d.Auth.RequirePermission("admin.roles"), h.Admin.AssignRole)
+	admin.Delete("/users/:id/roles", d.Auth.RequirePermission("admin.roles"), h.Admin.RevokeRole)
+
+	admin.Get("/complaints", d.Auth.RequirePermission("complaints.manage"), h.Admin.ListComplaints)
+	admin.Get("/complaints/:id", d.Auth.RequirePermission("complaints.manage"), h.Admin.GetComplaint)
+	admin.Post("/complaints/:id/assign", d.Auth.RequirePermission("complaints.manage"), h.Admin.AssignComplaint)
+	admin.Post("/complaints/:id/resolve", d.Auth.RequirePermission("complaints.manage"), h.Admin.ResolveComplaint)
+
+	admin.Get("/audit-logs", d.Auth.RequirePermission("admin.audit"), h.Admin.ListAuditLogs)
+	admin.Get("/audit-logs/:resource_type/:id", d.Auth.RequirePermission("admin.audit"), h.Admin.ResourceHistory)
+
+	admin.Get("/settings", d.Auth.RequirePermission("admin.settings"), h.Admin.ListSettings)
+	admin.Put("/settings/:key", d.Auth.RequirePermission("admin.settings"), h.Admin.UpdateSetting)
+	admin.Get("/feature-flags", d.Auth.RequirePermission("admin.settings"), h.Admin.ListFeatureFlags)
+	admin.Put("/feature-flags/:key", d.Auth.RequirePermission("admin.settings"), h.Admin.SetFeatureFlag)
 }

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Nothing is backed up. The only local state worth persisting is the session,
+  and a refresh token restored onto a different device is a credential leaving
+  the device it was issued to. Signing in again costs the driver one screen.
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="file" path="." />
+</full-backup-content>

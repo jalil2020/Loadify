@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  English is the base locale. Reference data — region names, vehicle type
+  labels, cargo types — is deliberately absent: the server localises those for
+  the request's Accept-Language, so translating them again here would guarantee
+  the two drift apart.
+-->
+<resources>
+    <!-- A brand name, identical in every language. -->
+    <string name="app_name" translatable="false">Loadify</string>
+
+    <!-- Navigation -->
+    <string name="nav_board">Loads</string>
+    <string name="nav_bookings">Bookings</string>
+    <string name="nav_trips">Trips</string>
+    <string name="nav_profile">Profile</string>
+
+    <!-- Board -->
+    <string name="board_title">Load board</string>
+    <string name="board_loads_found">%1$s loads found</string>
+    <string name="board_reserve">Reserve</string>
+    <string name="board_reserved">Reserved</string>
+    <string name="board_contact_hidden">Visible after booking</string>
+    <string name="board_per_km">/ per km</string>
+    <string name="board_empty">No loads found</string>
+    <string name="board_empty_hint">Try widening your filters</string>
+
+    <!-- Filters -->
+    <string name="filter_title">Filters</string>
+    <string name="filter_from">From</string>
+    <string name="filter_to">To</string>
+    <string name="filter_any_region">All regions</string>
+    <string name="filter_vehicle_type">Vehicle type</string>
+    <string name="filter_any_vehicle">Any</string>
+    <string name="filter_min_weight">Min weight (kg)</string>
+    <string name="filter_max_weight">Max weight (kg)</string>
+    <string name="filter_fits_my_vehicle">Only loads my vehicle fits</string>
+    <string name="filter_clear">Clear</string>
+    <string name="filter_apply">Apply</string>
+
+    <!-- Load detail -->
+    <string name="load_cargo">Cargo</string>
+    <string name="load_weight">Weight</string>
+    <string name="load_route">Route</string>
+    <string name="load_pickup_date">Pickup date</string>
+    <string name="load_shipper">Shipper</string>
+    <string name="load_requirements">Requirements</string>
+    <string name="load_adr">ADR</string>
+    <string name="load_refrigerated">Refrigerated</string>
+    <string name="load_distance">Distance</string>
+
+    <!-- Bookings -->
+    <string name="bookings_title">My bookings</string>
+    <string name="bookings_accept">Accept</string>
+    <string name="bookings_reject">Reject</string>
+    <string name="bookings_withdraw">Withdraw</string>
+    <string name="bookings_empty">No bookings yet</string>
+
+    <!-- Trips -->
+    <string name="trips_title">Trips</string>
+    <string name="trips_active">Active</string>
+    <string name="trips_past">Past</string>
+    <string name="trips_next_stage">Next: %1$s</string>
+    <string name="trips_commission">Commission</string>
+    <string name="trips_payout">Payout</string>
+    <string name="trips_empty">No trips yet</string>
+    <string name="trips_awaiting_confirmation">Waiting for the shipper to confirm</string>
+    <string name="trips_tracking_on">Sharing location</string>
+    <string name="trips_tracking_off">Location off</string>
+    <string name="trips_tracking_denied">Location permission denied</string>
+
+    <!-- Trip stages, keyed by the wire value the API uses -->
+    <string name="stage_created">Not started</string>
+    <string name="stage_en_route_to_pickup">En route to pickup</string>
+    <string name="stage_at_pickup">At pickup</string>
+    <string name="stage_loaded">Loaded</string>
+    <string name="stage_in_transit">In transit</string>
+    <string name="stage_at_delivery">At delivery</string>
+    <string name="stage_delivered">Delivered</string>
+    <string name="stage_completed">Completed</string>
+    <string name="stage_cancelled">Cancelled</string>
+    <string name="stage_disputed">Disputed</string>
+
+    <!-- Profile -->
+    <string name="profile_online">Online</string>
+    <string name="profile_offline">Offline</string>
+    <string name="profile_busy">Busy</string>
+    <string name="profile_accepting_work">Accepting work</string>
+    <string name="profile_vehicles">Vehicles</string>
+    <string name="profile_wallet">Wallet</string>
+    <string name="profile_held">Held</string>
+    <string name="profile_available">Available</string>
+    <string name="profile_completed_trips">Completed trips</string>
+    <string name="profile_rating">Rating</string>
+    <string name="profile_verified">Verified</string>
+    <string name="profile_unverified">Unverified</string>
+    <string name="profile_language">Language</string>
+    <string name="profile_sign_out">Sign out</string>
+
+    <!-- Auth -->
+    <string name="auth_sign_in">Sign in</string>
+    <string name="auth_subtitle">Sign in with your phone number</string>
+    <string name="auth_phone">Phone</string>
+    <string name="auth_password">Password</string>
+    <string name="auth_phone_format">Format: +998XXXXXXXXX</string>
+    <string name="auth_password_too_short">At least 8 characters</string>
+    <string name="auth_session_expired">Session expired, sign in again</string>
+    <string name="auth_show_password">Show password</string>
+    <string name="auth_hide_password">Hide password</string>
+
+    <!-- Generic -->
+    <string name="common_retry">Retry</string>
+    <string name="common_loading">Loading…</string>
+    <string name="common_error">Something went wrong</string>
+    <string name="common_call">Call</string>
+    <string name="common_back">Back</string>
+    <string name="common_open_settings">Open settings</string>
+</resources>

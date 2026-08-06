@@ -11,44 +11,10 @@ concurrency:
   group: mobile-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  FLUTTER_VERSION: "3.35.5"
-
 jobs:
   verify:
-    name: Analyze and test
+    name: Build and test
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: android
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-
-      - name: Install
-        run: flutter pub get
-
-      - name: Formatting
-        run: dart format --output=none --set-exit-if-changed .
-
-      # Strict analysis: the project turns on strict-casts and strict-inference,
-      # which is what keeps a loosely-typed JSON response from silently becoming
-      # a runtime failure in a driver's hand.
-      - name: Analyze
-        run: flutter analyze --fatal-infos
-
-      - name: Test
-        run: flutter test
-
-  build:
-    name: Build APK
-    runs-on: ubuntu-latest
-    needs: [verify]
     defaults:
       run:
         working-directory: android
@@ -60,22 +26,38 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - uses: subosito/flutter-action@v2
+      - uses: gradle/actions/setup-gradle@v4
         with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
-      - run: flutter pub get
+      # Kotlin is compiled with allWarningsAsErrors, so a deprecation is a
+      # build failure here rather than a slow accumulation nobody reads. That
+      # is what caught the non-mirrored arrow icons that would have pointed the
+      # wrong way in an RTL layout.
+      - name: Assemble debug
+        run: ./gradlew :app:assembleDebug
 
-      # Debug, not release: signing keys are not in CI. This proves the Android
-      # toolchain and the Dart code compile together, which is the part that
-      # analysis alone cannot tell you.
-      - name: Build debug APK
-        run: flutter build apk --debug
+      - name: Unit tests
+        run: ./gradlew :app:testDebugUnitTest
+
+      - name: Lint
+        run: ./gradlew :app:lintDebug
+
+      # The release build is the one that runs R8. Shipping without proving it
+      # here means finding out that minification stripped the serializers only
+      # after the store rollout.
+      - name: Assemble release
+        run: ./gradlew :app:assembleRelease
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: android/app/build/reports/tests/testDebugUnitTest
+          if-no-files-found: warn
 
       - uses: actions/upload-artifact@v4
         with:
           name: loadify-debug-apk
-          path: android/build/app/outputs/flutter-apk/app-debug.apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error

@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="nav_board">Грузы</string>
+    <string name="nav_bookings">Брони</string>
+    <string name="nav_trips">Рейсы</string>
+    <string name="nav_profile">Профиль</string>
+
+    <string name="board_title">Биржа грузов</string>
+    <string name="board_loads_found">Найдено грузов: %1$s</string>
+    <string name="board_reserve">Забронировать</string>
+    <string name="board_reserved">Забронировано</string>
+    <string name="board_contact_hidden">Откроется после брони</string>
+    <string name="board_per_km">/ за км</string>
+    <string name="board_empty">Грузы не найдены</string>
+    <string name="board_empty_hint">Попробуйте расширить фильтры</string>
+
+    <string name="filter_title">Фильтры</string>
+    <string name="filter_from">Откуда</string>
+    <string name="filter_to">Куда</string>
+    <string name="filter_any_region">Все регионы</string>
+    <string name="filter_vehicle_type">Тип кузова</string>
+    <string name="filter_any_vehicle">Любой</string>
+    <string name="filter_min_weight">Мин. вес (кг)</string>
+    <string name="filter_max_weight">Макс. вес (кг)</string>
+    <string name="filter_fits_my_vehicle">Только под мою машину</string>
+    <string name="filter_clear">Сбросить</string>
+    <string name="filter_apply">Применить</string>
+
+    <string name="load_cargo">Груз</string>
+    <string name="load_weight">Вес</string>
+    <string name="load_route">Маршрут</string>
+    <string name="load_pickup_date">Дата загрузки</string>
+    <string name="load_shipper">Грузоотправитель</string>
+    <string name="load_requirements">Требования</string>
+    <string name="load_adr">ADR</string>
+    <string name="load_refrigerated">Рефрижератор</string>
+    <string name="load_distance">Расстояние</string>
+
+    <string name="bookings_title">Мои брони</string>
+    <string name="bookings_accept">Принять</string>
+    <string name="bookings_reject">Отклонить</string>
+    <string name="bookings_withdraw">Отозвать</string>
+    <string name="bookings_empty">Броней нет</string>
+
+    <string name="trips_title">Рейсы</string>
+    <string name="trips_active">Активные</string>
+    <string name="trips_past">Завершённые</string>
+    <string name="trips_next_stage">Далее: %1$s</string>
+    <string name="trips_commission">Комиссия</string>
+    <string name="trips_payout">Водителю</string>
+    <string name="trips_empty">Рейсов нет</string>
+    <string name="trips_awaiting_confirmation">Ожидает подтверждения отправителя</string>
+    <string name="trips_tracking_on">Геопозиция передаётся</string>
+    <string name="trips_tracking_off">Геопозиция выключена</string>
+    <string name="trips_tracking_denied">Нет доступа к геопозиции</string>
+
+    <string name="stage_created">Не начат</string>
+    <string name="stage_en_route_to_pickup">Едет на загрузку</string>
+    <string name="stage_at_pickup">На загрузке</string>
+    <string name="stage_loaded">Загружен</string>
+    <string name="stage_in_transit">В пути</string>
+    <string name="stage_at_delivery">На выгрузке</string>
+    <string name="stage_delivered">Доставлен</string>
+    <string name="stage_completed">Завершён</string>
+    <string name="stage_cancelled">Отменён</string>
+    <string name="stage_disputed">Спор</string>
+
+    <string name="profile_online">Онлайн</string>
+    <string name="profile_offline">Офлайн</string>
+    <string name="profile_busy">Занят</string>
+    <string name="profile_accepting_work">Принимать заказы</string>
+    <string name="profile_vehicles">Машины</string>
+    <string name="profile_wallet">Кошелёк</string>
+    <string name="profile_held">Заблокировано</string>
+    <string name="profile_available">Доступно</string>
+    <string name="profile_completed_trips">Завершённых рейсов</string>
+    <string name="profile_rating">Рейтинг</string>
+    <string name="profile_verified">Проверен</string>
+    <string name="profile_unverified">Не проверен</string>
+    <string name="profile_language">Язык</string>
+    <string name="profile_sign_out">Выйти</string>
+
+    <string name="auth_sign_in">Вход</string>
+    <string name="auth_subtitle">Войдите по номеру телефона</string>
+    <string name="auth_phone">Телефон</string>
+    <string name="auth_password">Пароль</string>
+    <string name="auth_phone_format">Формат: +998XXXXXXXXX</string>
+    <string name="auth_password_too_short">Минимум 8 символов</string>
+    <string name="auth_session_expired">Сессия истекла, войдите снова</string>
+    <string name="auth_show_password">Показать пароль</string>
+    <string name="auth_hide_password">Скрыть пароль</string>
+
+    <string name="common_retry">Повторить</string>
+    <string name="common_loading">Загрузка…</string>
+    <string name="common_error">Произошла ошибка</string>
+    <string name="common_call">Позвонить</string>
+    <string name="common_back">Назад</string>
+    <string name="common_open_settings">Открыть настройки</string>
+</resources>

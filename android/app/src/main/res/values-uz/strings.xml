@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="nav_board">Yuklar</string>
+    <string name="nav_bookings">Bronlar</string>
+    <string name="nav_trips">Reyslar</string>
+    <string name="nav_profile">Profil</string>
+
+    <string name="board_title">Yuklar bozori</string>
+    <string name="board_loads_found">%1$s ta yuk topildi</string>
+    <string name="board_reserve">Bron qilish</string>
+    <string name="board_reserved">Bron qilingan</string>
+    <string name="board_contact_hidden">Bron qilgach koʻrinadi</string>
+    <string name="board_per_km">/ km uchun</string>
+    <string name="board_empty">Yuklar topilmadi</string>
+    <string name="board_empty_hint">Filtrlarni kengaytirib koʻring</string>
+
+    <string name="filter_title">Filtrlar</string>
+    <string name="filter_from">Qayerdan</string>
+    <string name="filter_to">Qayerga</string>
+    <string name="filter_any_region">Barcha viloyatlar</string>
+    <string name="filter_vehicle_type">Mashina turi</string>
+    <string name="filter_any_vehicle">Har qanday</string>
+    <string name="filter_min_weight">Min ogʻirlik (kg)</string>
+    <string name="filter_max_weight">Maks ogʻirlik (kg)</string>
+    <string name="filter_fits_my_vehicle">Faqat mening mashinamga mos</string>
+    <string name="filter_clear">Tozalash</string>
+    <string name="filter_apply">Qoʻllash</string>
+
+    <string name="load_cargo">Yuk</string>
+    <string name="load_weight">Ogʻirlik</string>
+    <string name="load_route">Yoʻnalish</string>
+    <string name="load_pickup_date">Yuklash sanasi</string>
+    <string name="load_shipper">Yuk beruvchi</string>
+    <string name="load_requirements">Talablar</string>
+    <string name="load_adr">ADR</string>
+    <string name="load_refrigerated">Sovutgich</string>
+    <string name="load_distance">Masofa</string>
+
+    <string name="bookings_title">Mening bronlarim</string>
+    <string name="bookings_accept">Qabul qilish</string>
+    <string name="bookings_reject">Rad etish</string>
+    <string name="bookings_withdraw">Bekor qilish</string>
+    <string name="bookings_empty">Bronlar yoʻq</string>
+
+    <string name="trips_title">Reyslar</string>
+    <string name="trips_active">Faol</string>
+    <string name="trips_past">Tugagan</string>
+    <string name="trips_next_stage">Keyingi: %1$s</string>
+    <string name="trips_commission">Komissiya</string>
+    <string name="trips_payout">Haydovchiga</string>
+    <string name="trips_empty">Reyslar yoʻq</string>
+    <string name="trips_awaiting_confirmation">Yuk beruvchi tasdiqlashini kuting</string>
+    <string name="trips_tracking_on">Joylashuv yuborilmoqda</string>
+    <string name="trips_tracking_off">Joylashuv oʻchirilgan</string>
+    <string name="trips_tracking_denied">Joylashuvga ruxsat berilmadi</string>
+
+    <string name="stage_created">Boshlanmagan</string>
+    <string name="stage_en_route_to_pickup">Yuklashga ketmoqda</string>
+    <string name="stage_at_pickup">Yuklash joyida</string>
+    <string name="stage_loaded">Yuklandi</string>
+    <string name="stage_in_transit">Yoʻlda</string>
+    <string name="stage_at_delivery">Yetkazish joyida</string>
+    <string name="stage_delivered">Yetkazildi</string>
+    <string name="stage_completed">Yakunlandi</string>
+    <string name="stage_cancelled">Bekor qilindi</string>
+    <string name="stage_disputed">Nizo</string>
+
+    <string name="profile_online">Onlayn</string>
+    <string name="profile_offline">Oflayn</string>
+    <string name="profile_busy">Band</string>
+    <string name="profile_accepting_work">Ish qabul qilish</string>
+    <string name="profile_vehicles">Mashinalar</string>
+    <string name="profile_wallet">Hamyon</string>
+    <string name="profile_held">Bloklangan</string>
+    <string name="profile_available">Mavjud</string>
+    <string name="profile_completed_trips">Yakunlangan reyslar</string>
+    <string name="profile_rating">Reyting</string>
+    <string name="profile_verified">Tasdiqlangan</string>
+    <string name="profile_unverified">Tasdiqlanmagan</string>
+    <string name="profile_language">Til</string>
+    <string name="profile_sign_out">Chiqish</string>
+
+    <string name="auth_sign_in">Kirish</string>
+    <string name="auth_subtitle">Telefon raqamingiz bilan kiring</string>
+    <string name="auth_phone">Telefon</string>
+    <string name="auth_password">Parol</string>
+    <string name="auth_phone_format">Format: +998XXXXXXXXX</string>
+    <string name="auth_password_too_short">Kamida 8 ta belgi</string>
+    <string name="auth_session_expired">Sessiya tugadi, qayta kiring</string>
+    <string name="auth_show_password">Parolni koʻrsatish</string>
+    <string name="auth_hide_password">Parolni yashirish</string>
+
+    <string name="common_retry">Qayta urinish</string>
+    <string name="common_loading">Yuklanmoqda…</string>
+    <string name="common_error">Xatolik yuz berdi</string>
+    <string name="common_call">Qoʻngʻiroq</string>
+    <string name="common_back">Orqaga</string>
+    <string name="common_open_settings">Sozlamalarni ochish</string>
+</resources>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches the light scheme's background in Theme.kt, so the handover from
+         the launch window to the first Compose frame is not a flash. -->
+    <color name="launch_background">#F6F7F9</color>
+
+    <!-- Brand blue. Kept out of values-night: a launcher icon that changed with
+         the system theme would be a different icon to find on the home screen. -->
+    <color name="ic_launcher_background">#1B4DFF</color>
+</resources>

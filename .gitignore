@@ -25,17 +25,20 @@ npm-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# Flutter
-android/.dart_tool/
-android/.packages
+# Android
+android/.gradle/
 android/build/
-android/.flutter-plugins
-android/.flutter-plugins-dependencies
-android/ios/Pods/
-android/android/.gradle/
-android/android/local.properties
-android/**/GeneratedPluginRegistrant.*
+android/app/build/
+android/.kotlin/
+# Points at whichever SDK this machine happens to have; committing it breaks
+# the next person's build rather than helping it.
+android/local.properties
+android/.cxx/
+captures/
 *.iml
+*.hprof
+*.jks
+*.keystore
 
 # Editors / OS
 .idea/

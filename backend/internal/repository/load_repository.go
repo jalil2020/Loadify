@@ -208,7 +208,55 @@ func (r *loadRepository) Search(ctx context.Context, f domain.LoadFilter, offset
 		}
 		results = append(results, res)
 	}
+
+	// Scan reads plain columns and leaves associations nil, so a raw result has
+	// no route and no shipper — the two things a load board exists to show.
+	if err := r.hydrate(ctx, results); err != nil {
+		return nil, 0, err
+	}
 	return results, total, nil
+}
+
+// hydrate attaches the addresses and companies a list result needs, in two
+// batched queries rather than two per row.
+func (r *loadRepository) hydrate(ctx context.Context, results []domain.LoadSearchResult) error {
+	if len(results) == 0 {
+		return nil
+	}
+
+	addressIDs := make([]uuid.UUID, 0, len(results)*2)
+	companyIDs := make([]uuid.UUID, 0, len(results))
+	for i := range results {
+		addressIDs = append(addressIDs, results[i].Load.PickupAddressID, results[i].Load.DeliveryAddressID)
+		companyIDs = append(companyIDs, results[i].Load.CompanyID)
+	}
+
+	var addresses []domain.Address
+	if err := r.DB(ctx).Preload("Region").Preload("City").
+		Where("id IN ?", addressIDs).Find(&addresses).Error; err != nil {
+		return translate(err, "address")
+	}
+	addressByID := make(map[uuid.UUID]*domain.Address, len(addresses))
+	for i := range addresses {
+		addressByID[addresses[i].ID] = &addresses[i]
+	}
+
+	var companies []domain.Company
+	if err := r.DB(ctx).Preload("Logo").
+		Where("id IN ?", companyIDs).Find(&companies).Error; err != nil {
+		return translate(err, "company")
+	}
+	companyByID := make(map[uuid.UUID]*domain.Company, len(companies))
+	for i := range companies {
+		companyByID[companies[i].ID] = &companies[i]
+	}
+
+	for i := range results {
+		results[i].Load.PickupAddress = addressByID[results[i].Load.PickupAddressID]
+		results[i].Load.DeliveryAddress = addressByID[results[i].Load.DeliveryAddressID]
+		results[i].Load.Company = companyByID[results[i].Load.CompanyID]
+	}
+	return nil
 }
 
 // vehicleFitsPredicate mirrors domain.Vehicle.CanCarry in SQL.

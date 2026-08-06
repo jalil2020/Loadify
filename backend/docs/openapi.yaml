@@ -115,7 +115,7 @@ paths:
                   - $ref: "#/components/schemas/Envelope"
                   - type: object
                     properties:
-                      data: { $ref: "#/components/schemas/TokenPair" }
+                      data: { $ref: "#/components/schemas/AuthResponse" }
         "422":
           description: The code is wrong or expired
           content:
@@ -147,7 +147,7 @@ paths:
                   - $ref: "#/components/schemas/Envelope"
                   - type: object
                     properties:
-                      data: { $ref: "#/components/schemas/TokenPair" }
+                      data: { $ref: "#/components/schemas/AuthResponse" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "423":
           description: Locked after too many failed attempts
@@ -179,7 +179,7 @@ paths:
                   - $ref: "#/components/schemas/Envelope"
                   - type: object
                     properties:
-                      data: { $ref: "#/components/schemas/TokenPair" }
+                      data: { $ref: "#/components/schemas/AuthResponse" }
         "401":
           description: |
             Invalid, expired, or reused. `TOKEN_REUSE_DETECTED` means the whole
@@ -193,7 +193,16 @@ paths:
       tags: [Auth]
       summary: The signed-in principal
       responses:
-        "200": { $ref: "#/components/responses/OK" }
+        "200":
+          description: The current user, with effective permissions
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/User" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /loads:
@@ -644,6 +653,37 @@ components:
           type: string
           description: Quote this when reporting a problem.
 
+    User:
+      type: object
+      description: |
+        The signed-in principal. `permissions` is the flattened effective set
+        across every role — clients should gate UI on a permission, never on a
+        role name, so that adding a role does not require a client release.
+      properties:
+        id: { type: string, format: uuid }
+        phone: { type: string, example: "+998901234567" }
+        email: { type: string, nullable: true }
+        first_name: { type: string }
+        last_name: { type: string }
+        full_name: { type: string }
+        avatar_url: { type: string, nullable: true }
+        locale: { type: string, enum: [uz, ru, en] }
+        status: { type: string, enum: [active, suspended, deleted] }
+        phone_verified: { type: boolean }
+        roles:
+          type: array
+          items:
+            type: string
+            enum: [driver, company_manager, dispatcher, admin, super_admin]
+        permissions:
+          type: array
+          items: { type: string, example: bookings.create }
+        driver_id: { type: string, format: uuid, nullable: true }
+        company_id: { type: string, format: uuid, nullable: true }
+        company_role: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        last_login_at: { type: string, format: date-time, nullable: true }
+
     TokenPair:
       type: object
       properties:
@@ -652,6 +692,20 @@ components:
         token_type: { type: string, example: Bearer }
         expires_in: { type: integer, example: 900 }
         expires_at: { type: string, format: date-time }
+
+    AuthResponse:
+      type: object
+      description: |
+        What verify-otp, login and refresh all return. The tokens are nested
+        under `tokens`, not spread at the top level — a client that reads
+        `data.access_token` gets `undefined` and silently loses its session.
+
+        `user` is included on refresh as well as login, because roles and
+        permissions can change while a session is open; a client should adopt
+        the returned principal rather than keeping the copy it got at sign-in.
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        tokens: { $ref: "#/components/schemas/TokenPair" }
 
     Point:
       type: object

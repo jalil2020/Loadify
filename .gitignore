@@ -58,3 +58,7 @@ coverage.out
 # Local run artefacts
 backend/.env
 
+# Redis writes its snapshot into the working directory it was started from,
+# which is the repo root when running the stack locally.
+dump.rdb
+

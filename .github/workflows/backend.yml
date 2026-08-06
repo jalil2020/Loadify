@@ -48,6 +48,14 @@ jobs:
           go install honnef.co/go/tools/cmd/staticcheck@latest
           staticcheck ./...
 
+      # The published contract is what clients build against, so a $ref that
+      # does not resolve is a shipped defect, not a docs nit. This caught the
+      # auth endpoints being documented as returning a bare token pair when
+      # they actually nest it under `tokens`.
+      - name: Validate OpenAPI document
+        working-directory: backend
+        run: go run ./cmd/speccheck ./docs/openapi.yaml
+
   test:
     name: Test
     runs-on: ubuntu-latest

@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -127,10 +128,12 @@ func seed(ctx context.Context, db *gorm.DB, hasher hash.Hasher, force bool, log 
 			{dispatcher.ID, domain.MemberRoleDispatcher},
 		} {
 			joined := time.Now().UTC()
-			if err := tx.Create(&domain.CompanyMember{
+			record := &domain.CompanyMember{
 				ID: uuid.New(), CompanyID: company.ID, UserID: member.userID,
 				MemberRole: member.role, IsActive: true, JoinedAt: &joined,
-			}).Error; err != nil {
+			}
+			if err := createIfMissing(tx, record,
+				"company_id = ? AND user_id = ?", company.ID, member.userID); err != nil {
 				return err
 			}
 			roleCode := domain.RoleDispatcher
@@ -146,12 +149,21 @@ func seed(ctx context.Context, db *gorm.DB, hasher hash.Hasher, force bool, log 
 		if err != nil {
 			return err
 		}
+		// The driver role carries the permissions; the driver row carries the
+		// profile. Both are needed — a driver profile without the role cannot
+		// reserve anything.
+		if err := grantRole(tx, tiltUser.ID, domain.RoleDriver, nil); err != nil {
+			return err
+		}
 		if err := createDriver(tx, tiltUser.ID, domain.VehicleTent, 20000, "01A111BC", false); err != nil {
 			return err
 		}
 
 		fridgeUser, err := createUser(tx, "+998905555555", "Bekzod", "Aliyev", passwordHash)
 		if err != nil {
+			return err
+		}
+		if err := grantRole(tx, fridgeUser.ID, domain.RoleDriver, nil); err != nil {
 			return err
 		}
 		if err := createDriver(tx, fridgeUser.ID, domain.VehicleRefrigerator, 15000, "01B222DE", true); err != nil {
@@ -162,29 +174,72 @@ func seed(ctx context.Context, db *gorm.DB, hasher hash.Hasher, force bool, log 
 	})
 }
 
+// createUser inserts the account, or refreshes it when the seed is re-run.
+//
+// The lookup is explicit rather than FirstOrCreate: GORM treats the non-zero
+// fields of the passed struct as extra search conditions, so a freshly
+// generated ID would make it miss the existing row and then collide on phone.
 func createUser(tx *gorm.DB, phone, firstName, lastName, passwordHash string) (*domain.User, error) {
 	now := time.Now().UTC()
-	user := &domain.User{
-		ID:              uuid.New(),
-		Phone:           phone,
-		PasswordHash:    passwordHash,
-		FirstName:       firstName,
-		LastName:        lastName,
-		Locale:          domain.LocaleUZ,
-		Status:          domain.UserStatusActive,
-		PhoneVerifiedAt: &now,
-	}
-	// Re-running the seed updates the existing account rather than colliding.
-	if err := tx.Where("phone = ?", phone).
-		Assign(map[string]any{
+
+	var existing domain.User
+	err := tx.Where("phone = ?", phone).First(&existing).Error
+	switch {
+	case err == nil:
+		updates := map[string]any{
 			"password_hash":     passwordHash,
+			"first_name":        firstName,
+			"last_name":         lastName,
 			"status":            domain.UserStatusActive,
 			"phone_verified_at": now,
-		}).
-		FirstOrCreate(user).Error; err != nil {
-		return nil, fmt.Errorf("creating %s: %w", phone, err)
+		}
+		if err := tx.Model(&domain.User{}).Where("id = ?", existing.ID).
+			Updates(updates).Error; err != nil {
+			return nil, fmt.Errorf("refreshing %s: %w", phone, err)
+		}
+		return &existing, nil
+
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		user := &domain.User{
+			ID:              uuid.New(),
+			Phone:           phone,
+			PasswordHash:    passwordHash,
+			FirstName:       firstName,
+			LastName:        lastName,
+			Locale:          domain.LocaleUZ,
+			Status:          domain.UserStatusActive,
+			PhoneVerifiedAt: &now,
+		}
+		if err := tx.Create(user).Error; err != nil {
+			return nil, fmt.Errorf("creating %s: %w", phone, err)
+		}
+		return user, nil
+
+	default:
+		return nil, fmt.Errorf("looking up %s: %w", phone, err)
 	}
-	return user, nil
+}
+
+// createIfMissing inserts record only when nothing matches the condition, and
+// loads the existing row into it otherwise.
+//
+// This replaces FirstOrCreate throughout the seed: GORM adds the non-zero fields
+// of the destination struct to the WHERE clause, so a pre-generated ID makes it
+// miss the existing row and then fail on a unique constraint.
+func createIfMissing[T any](tx *gorm.DB, record *T, condition string, args ...any) error {
+	// The lookup goes into a zero-valued struct, never into record: GORM adds
+	// the destination's non-zero fields — including its primary key — to the
+	// WHERE clause, so searching with the pre-generated ID would never match.
+	var existing T
+	err := tx.Where(condition, args...).First(&existing).Error
+	if err == nil {
+		*record = existing
+		return nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	return tx.Create(record).Error
 }
 
 func grantRole(tx *gorm.DB, userID uuid.UUID, roleCode string, companyID *uuid.UUID) error {
@@ -192,11 +247,29 @@ func grantRole(tx *gorm.DB, userID uuid.UUID, roleCode string, companyID *uuid.U
 	if err := tx.First(&role, "code = ?", roleCode).Error; err != nil {
 		return fmt.Errorf("finding the %s role: %w", roleCode, err)
 	}
-	return tx.Exec(`
+	// A grant that silently affects no rows leaves an account with no
+	// permissions and no explanation, so a no-op is treated as an error unless
+	// the row genuinely already exists.
+	res := tx.Exec(`
 		INSERT INTO user_roles (id, user_id, role_id, company_id, created_at, updated_at)
 		VALUES (?, ?, ?, ?, now(), now())
 		ON CONFLICT DO NOTHING`,
-		uuid.New(), userID, role.ID, companyID).Error
+		uuid.New(), userID, role.ID, companyID)
+	if res.Error != nil {
+		return fmt.Errorf("granting %s: %w", roleCode, res.Error)
+	}
+	if res.RowsAffected == 0 {
+		var existing int64
+		if err := tx.Model(&domain.UserRole{}).
+			Where("user_id = ? AND role_id = ?", userID, role.ID).
+			Count(&existing).Error; err != nil {
+			return err
+		}
+		if existing == 0 {
+			return fmt.Errorf("granting %s to %s affected no rows", roleCode, userID)
+		}
+	}
+	return nil
 }
 
 func createCompany(tx *gorm.DB, ownerID uuid.UUID) (*domain.Company, error) {
@@ -212,7 +285,7 @@ func createCompany(tx *gorm.DB, ownerID uuid.UUID) (*domain.Company, error) {
 		Status:      domain.CompanyStatusVerified,
 		VerifiedAt:  &now,
 	}
-	if err := tx.Where("owner_user_id = ?", ownerID).FirstOrCreate(company).Error; err != nil {
+	if err := createIfMissing(tx, company, "owner_user_id = ?", ownerID); err != nil {
 		return nil, fmt.Errorf("creating the demo company: %w", err)
 	}
 	return company, nil
@@ -236,7 +309,7 @@ func createDriver(tx *gorm.DB, userID uuid.UUID, vehicleType domain.VehicleType,
 		CurrentLocation:    &tashkent,
 		LocationUpdatedAt:  &now,
 	}
-	if err := tx.Where("user_id = ?", userID).FirstOrCreate(driver).Error; err != nil {
+	if err := createIfMissing(tx, driver, "user_id = ?", userID); err != nil {
 		return fmt.Errorf("creating the demo driver: %w", err)
 	}
 
@@ -263,7 +336,7 @@ func createDriver(tx *gorm.DB, userID uuid.UUID, vehicleType domain.VehicleType,
 		vehicle.HasRefrigeration = true
 		vehicle.TempMinC, vehicle.TempMaxC = &minC, &maxC
 	}
-	if err := tx.Where("plate_number = ?", plate).FirstOrCreate(vehicle).Error; err != nil {
+	if err := createIfMissing(tx, vehicle, "plate_number = ?", plate); err != nil {
 		return fmt.Errorf("creating the demo vehicle: %w", err)
 	}
 	return nil
@@ -293,6 +366,16 @@ func createLoads(tx *gorm.DB, companyID, createdBy uuid.UUID) error {
 			"Tashkent", geo.NewPoint(41.2995, 69.2401), 8000, 220_000_00, domain.VehicleTent, false},
 		{"Grain, 20t", "Jizzakh", geo.NewPoint(40.1158, 67.8422),
 			"Nukus", geo.NewPoint(42.4600, 59.6100), 20000, 620_000_00, domain.VehicleGrain, false},
+	}
+
+	// Re-running the seed must not pile up another set of loads.
+	var existingLoads int64
+	if err := tx.Model(&domain.Load{}).Where("company_id = ?", companyID).
+		Count(&existingLoads).Error; err != nil {
+		return err
+	}
+	if existingLoads > 0 {
+		return nil
 	}
 
 	now := time.Now().UTC()
@@ -359,14 +442,22 @@ func createAddress(tx *gorm.DB, cityName string, point geo.Point) (*domain.Addre
 
 	// Resolve the region from the coordinates so the load is filterable by
 	// region, exactly as the API does when a client pins a map location.
+	// See GeoRepository.NearestRegion for why this is raw SQL rather than
+	// Order(gorm.Expr(...)).
 	var region domain.Region
-	err := tx.Where("is_active AND center IS NOT NULL").
-		Order(gorm.Expr("center <-> ?::geography", point)).
-		First(&region).Error
-	if err == nil {
-		address.RegionID = &region.ID
-		address.CountryID = &region.CountryID
+	err := tx.Raw(`
+		SELECT * FROM regions
+		WHERE is_active AND center IS NOT NULL
+		ORDER BY center <-> ?::geography
+		LIMIT 1`, point).Scan(&region).Error
+	if err != nil {
+		return nil, fmt.Errorf("resolving the region for %s: %w", cityName, err)
 	}
+	if region.ID == uuid.Nil {
+		return nil, fmt.Errorf("no region matched %s: is the reference data loaded?", cityName)
+	}
+	address.RegionID = &region.ID
+	address.CountryID = &region.CountryID
 
 	if err := tx.Create(address).Error; err != nil {
 		return nil, fmt.Errorf("creating the address for %s: %w", cityName, err)

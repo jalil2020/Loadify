@@ -54,3 +54,7 @@ uploads/
 coverage/
 coverage.out
 *.lcov
+
+# Local run artefacts
+backend/.env
+

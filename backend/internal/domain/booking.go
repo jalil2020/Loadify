@@ -157,13 +157,15 @@ func (s TripStatus) IsDriverAdvanceable() bool { return driverAdvanceable[s] }
 
 // Trip is an accepted booking being carried out.
 type Trip struct {
-	ID                 uuid.UUID  `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	BookingID          uuid.UUID  `gorm:"type:uuid;not null;uniqueIndex"`
-	LoadID             uuid.UUID  `gorm:"type:uuid;not null;index"`
-	DriverID           uuid.UUID  `gorm:"type:uuid;not null;index"`
-	VehicleID          *uuid.UUID `gorm:"type:uuid"`
-	CompanyID          uuid.UUID  `gorm:"type:uuid;not null;index"`
-	TripNumber         string     `gorm:"size:24;not null"`
+	ID        uuid.UUID  `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	BookingID uuid.UUID  `gorm:"type:uuid;not null;uniqueIndex"`
+	LoadID    uuid.UUID  `gorm:"type:uuid;not null;index"`
+	DriverID  uuid.UUID  `gorm:"type:uuid;not null;index"`
+	VehicleID *uuid.UUID `gorm:"type:uuid"`
+	CompanyID uuid.UUID  `gorm:"type:uuid;not null;index"`
+	// See Load.ReferenceNo: the default tag is what lets the database generate
+	// the number instead of GORM writing an empty string.
+	TripNumber         string     `gorm:"size:24;not null;default:next_reference('TR', 'trip_number_seq')"`
 	Status             TripStatus `gorm:"size:24;not null;default:'created'"`
 	AgreedPriceAmount  int64      `gorm:"not null"`
 	CommissionAmount   int64      `gorm:"not null;default:0"`

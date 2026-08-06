@@ -287,8 +287,9 @@ type PaymentWebhook struct {
 
 // Invoice is a billing document.
 type Invoice struct {
-	ID        uuid.UUID  `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	Number    string     `gorm:"size:32;not null"`
+	ID uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	// See Load.ReferenceNo for why the default tag is required here.
+	Number    string     `gorm:"size:32;not null;default:next_reference('INV', 'invoice_number_seq')"`
 	CompanyID *uuid.UUID `gorm:"type:uuid"`
 	UserID    *uuid.UUID `gorm:"type:uuid"`
 	TripID    *uuid.UUID `gorm:"type:uuid"`

@@ -56,7 +56,15 @@ func AccessLog(log logger.Logger) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		start := time.Now()
 		err := c.Next()
+
+		// A handler that fails returns the error up to Fiber's central
+		// ErrorHandler, which only writes the status after every middleware has
+		// unwound. Reading the response here would therefore report 200 for
+		// every rejection, so the status is taken from the error instead.
 		status := c.Response().StatusCode()
+		if err != nil {
+			status = apperror.As(err).HTTPStatus
+		}
 
 		fields := []logger.Field{
 			logger.String("method", c.Method()),
@@ -68,6 +76,14 @@ func AccessLog(log logger.Logger) fiber.Handler {
 		}
 		if claims := Claims(c); claims != nil {
 			fields = append(fields, logger.String("user_id", claims.UserID.String()))
+		}
+		if err != nil {
+			// The machine code is what an operator greps for; the wrapped cause
+			// is the only place the underlying failure is recorded.
+			appErr := apperror.As(err)
+			fields = append(fields,
+				logger.String("error_code", appErr.Code),
+				logger.Err(err))
 		}
 
 		switch {

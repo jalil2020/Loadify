@@ -101,10 +101,13 @@ type Load struct {
 	ID              uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	CompanyID       uuid.UUID `gorm:"type:uuid;not null;index"`
 	CreatedByUserID uuid.UUID `gorm:"type:uuid;not null"`
-	ReferenceNo     string    `gorm:"size:24;not null"`
-	Title           string    `gorm:"size:255;not null"`
-	Description     *string
-	CargoTypeID     *uuid.UUID `gorm:"type:uuid"`
+	// The default tag makes GORM omit an empty value from the INSERT and read
+	// the generated reference back. Without it GORM writes an explicit '' and
+	// every load after the first collides on the unique index.
+	ReferenceNo string `gorm:"size:24;not null;default:next_reference('LD', 'load_reference_seq')"`
+	Title       string `gorm:"size:255;not null"`
+	Description *string
+	CargoTypeID *uuid.UUID `gorm:"type:uuid"`
 
 	WeightKg  int      `gorm:"not null"`
 	VolumeM3  *float64 `gorm:"type:numeric(8,2)"`

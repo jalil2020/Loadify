@@ -84,16 +84,22 @@ func (r *geoRepository) NearestRegion(ctx context.Context, point geo.Point) (*do
 	if !point.Valid() {
 		return nil, nil
 	}
+	// Raw SQL, not Order(gorm.Expr(...)): GORM does not bind a variable placed
+	// in an ORDER BY expression to the position it occupies, so the KNN operator
+	// silently compares against the wrong value and returns the wrong region.
 	var region domain.Region
-	err := r.DB(ctx).Model(&domain.Region{}).
-		Where("is_active AND center IS NOT NULL").
-		Order(gorm.Expr("center <-> ?::geography", point)).
-		First(&region).Error
+	err := r.DB(ctx).Raw(`
+		SELECT * FROM regions
+		WHERE is_active AND center IS NOT NULL
+		ORDER BY center <-> ?::geography
+		LIMIT 1`, point).Scan(&region).Error
 	if err != nil {
-		if isNotFound(err) {
-			return nil, nil
-		}
 		return nil, translate(err, "region")
+	}
+	// Scan leaves the destination zero-valued when nothing matched, rather than
+	// reporting a not-found error the way First does.
+	if region.ID == uuid.Nil {
+		return nil, nil
 	}
 	return &region, nil
 }

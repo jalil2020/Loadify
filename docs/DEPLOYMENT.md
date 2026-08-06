@@ -257,6 +257,16 @@ key. Read the first log line:
 docker compose -f deploy/docker-compose.yml logs api | head -20
 ```
 
+**Region/city filters return nothing after a destructive migration.** The
+reference vocabularies (regions, cities, cargo types) are cached in Redis for
+6 hours under stable keys. Rolling the migrations down and up regenerates their
+UUIDs, so clients keep receiving the old ids from the cache and every filter
+using them matches nothing. After any `migrate down`, flush the cache:
+
+```bash
+docker exec loadify-redis redis-cli flushdb
+```
+
 **Migrations are stuck "dirty".** A migration failed halfway. Inspect what
 applied, fix the SQL, then force the version back and re-run — do not edit the
 `schema_migrations` table by hand without knowing which statements landed.

@@ -7,6 +7,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
+import kotlin.math.roundToLong
 
 /**
  * Locale-aware rendering.
@@ -32,6 +33,14 @@ class Fmt(tag: String) {
         }
         return "${f.format(minor / 100.0)} $currency"
     }
+
+    /**
+     * A derived rate arrives fractional. Tiyin below the unit are noise on a
+     * price-per-km, so it rounds rather than widening every money field to a
+     * Double and losing the exactness that matters on an actual amount.
+     */
+    fun money(minor: Double, currency: String = "UZS"): String =
+        money(minor.roundToLong(), currency)
 
     fun number(value: Number): String = NumberFormat.getNumberInstance(locale).format(value)
 

@@ -1,10 +1,14 @@
 package uz.loadify.core.network
 
+import android.util.Log
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import retrofit2.Response
 import uz.loadify.core.error.ApiException
 import uz.loadify.core.error.SessionExpiredException
 import java.io.IOException
+
+private const val TAG = "LoadifyApi"
 
 /**
  * Turns a Retrofit [Response] into either the payload or a typed failure.
@@ -49,6 +53,18 @@ class ApiCall(private val json: Json) {
             block()
         } catch (e: IOException) {
             throw ApiException.network(e)
+        } catch (e: SerializationException) {
+            // A shape the client did not expect. Logged with the field name
+            // kotlinx reports, because the alternative — a bare "something went
+            // wrong" — leaves neither the driver nor whoever debugs it anything
+            // to go on. This is how a Long field met a fractional rate.
+            Log.e(TAG, "cannot decode $path", e)
+            throw ApiException(
+                code = ApiException.MALFORMED_RESPONSE,
+                message = "Unexpected response from $path: ${e.message}",
+                status = 0,
+                cause = e,
+            )
         }
 
         if (response.isSuccessful) {

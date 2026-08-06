@@ -70,7 +70,12 @@ data class Load(
     @SerialName("requires_refrigeration") val requiresRefrigeration: Boolean = false,
     @SerialName("price_amount") val priceAmount: Long = 0,
     @SerialName("price_currency") val priceCurrency: String = "UZS",
-    @SerialName("price_per_km") val pricePerKm: Long? = null,
+    /**
+     * A derived rate — price divided by distance — so unlike every other money
+     * field this one genuinely arrives fractional (84334.235… tiyin per km).
+     * Declaring it Long makes the whole list fail to decode.
+     */
+    @SerialName("price_per_km") val pricePerKm: Double? = null,
     val status: String = "",
     @SerialName("published_at") val publishedAt: String? = null,
     @SerialName("views_count") val viewsCount: Int = 0,

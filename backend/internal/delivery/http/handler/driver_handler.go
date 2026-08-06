@@ -4,7 +4,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/loadify/backend/internal/delivery/http/middleware"
-	"github.com/loadify/backend/internal/domain"
 	"github.com/loadify/backend/internal/dto"
 	"github.com/loadify/backend/internal/usecase"
 	"github.com/loadify/backend/pkg/pagination"
@@ -24,13 +23,12 @@ var driverSortColumns = map[string]string{
 // DriverHandler exposes driver, document and vehicle endpoints.
 type DriverHandler struct {
 	drivers   *usecase.DriverUsecase
-	locations domain.LocationRepository
 	validator validator.Validator
 }
 
 // NewDriverHandler builds the driver handler.
-func NewDriverHandler(drivers *usecase.DriverUsecase, locations domain.LocationRepository, v validator.Validator) *DriverHandler {
-	return &DriverHandler{drivers: drivers, locations: locations, validator: v}
+func NewDriverHandler(drivers *usecase.DriverUsecase, v validator.Validator) *DriverHandler {
+	return &DriverHandler{drivers: drivers, validator: v}
 }
 
 // SaveProfile creates or updates the caller's driver profile.
@@ -135,7 +133,7 @@ func (h *DriverHandler) UpdateLocation(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	if err := h.drivers.UpdateLocation(c.UserContext(), userID, req, h.locations); err != nil {
+	if err := h.drivers.UpdateLocation(c.UserContext(), userID, req); err != nil {
 		return err
 	}
 	return response.NoContent(c)

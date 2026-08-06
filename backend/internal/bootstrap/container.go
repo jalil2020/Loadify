@@ -10,9 +10,11 @@ import (
 	"github.com/loadify/backend/internal/config"
 	"github.com/loadify/backend/internal/delivery/http/handler"
 	"github.com/loadify/backend/internal/delivery/http/middleware"
+	"github.com/loadify/backend/internal/delivery/ws"
 	"github.com/loadify/backend/internal/domain"
 	"github.com/loadify/backend/internal/infrastructure/cache"
 	"github.com/loadify/backend/internal/infrastructure/database"
+	"github.com/loadify/backend/internal/infrastructure/push"
 	"github.com/loadify/backend/internal/infrastructure/sms"
 	"github.com/loadify/backend/internal/infrastructure/storage"
 	"github.com/loadify/backend/internal/repository"
@@ -43,59 +45,69 @@ type Container struct {
 	Usecases Usecases
 	Handlers Handlers
 	Auth     *middleware.AuthMiddleware
+	// Hub is exposed so the server can start its Redis subscription and close it
+	// during graceful shutdown.
+	Hub *ws.Hub
 }
 
 // Repositories groups the persistence adapters.
 type Repositories struct {
-	Tx          domain.TxManager
-	Audit       domain.AuditLogger
-	Users       domain.UserRepository
-	Roles       domain.RoleRepository
-	Sessions    domain.SessionRepository
-	OTPs        domain.OTPRepository
-	Resets      domain.PasswordResetRepository
-	Identity    domain.IdentityRepository
-	Files       domain.FileRepository
-	Geo         domain.GeoRepository
-	Drivers     domain.DriverRepository
-	DriverDocs  domain.DriverDocumentRepository
-	Vehicles    domain.VehicleRepository
-	DriverPrefs domain.DriverPreferenceRepository
-	Locations   domain.LocationRepository
-	Companies   domain.CompanyRepository
-	CompanyDocs domain.CompanyDocumentRepository
-	Loads       domain.LoadRepository
-	CargoTypes  domain.CargoTypeRepository
-	Saved       domain.SavedRepository
-	Bookings    domain.BookingRepository
-	Trips       domain.TripRepository
-	Ratings     domain.RatingRepository
-	Settings    domain.SettingsRepository
+	Tx            domain.TxManager
+	Audit         domain.AuditLogger
+	Users         domain.UserRepository
+	Roles         domain.RoleRepository
+	Sessions      domain.SessionRepository
+	OTPs          domain.OTPRepository
+	Resets        domain.PasswordResetRepository
+	Identity      domain.IdentityRepository
+	Files         domain.FileRepository
+	Geo           domain.GeoRepository
+	Drivers       domain.DriverRepository
+	DriverDocs    domain.DriverDocumentRepository
+	Vehicles      domain.VehicleRepository
+	DriverPrefs   domain.DriverPreferenceRepository
+	Locations     domain.LocationRepository
+	Companies     domain.CompanyRepository
+	CompanyDocs   domain.CompanyDocumentRepository
+	Loads         domain.LoadRepository
+	CargoTypes    domain.CargoTypeRepository
+	Saved         domain.SavedRepository
+	Bookings      domain.BookingRepository
+	Trips         domain.TripRepository
+	Ratings       domain.RatingRepository
+	Settings      domain.SettingsRepository
+	Chat          domain.ChatRepository
+	Notifications domain.NotificationRepository
 }
 
 // Usecases groups the business-rule services.
 type Usecases struct {
-	Auth      *usecase.AuthUsecase
-	File      *usecase.FileUsecase
-	Driver    *usecase.DriverUsecase
-	Company   *usecase.CompanyUsecase
-	Reference *usecase.ReferenceUsecase
-	Load      *usecase.LoadUsecase
-	Booking   *usecase.BookingUsecase
-	Trip      *usecase.TripUsecase
+	Auth         *usecase.AuthUsecase
+	File         *usecase.FileUsecase
+	Driver       *usecase.DriverUsecase
+	Company      *usecase.CompanyUsecase
+	Reference    *usecase.ReferenceUsecase
+	Load         *usecase.LoadUsecase
+	Booking      *usecase.BookingUsecase
+	Trip         *usecase.TripUsecase
+	Chat         *usecase.ChatUsecase
+	Notification *usecase.NotificationUsecase
 }
 
 // Handlers groups the HTTP handlers.
 type Handlers struct {
-	Health    *handler.HealthHandler
-	Auth      *handler.AuthHandler
-	Driver    *handler.DriverHandler
-	Company   *handler.CompanyHandler
-	File      *handler.FileHandler
-	Reference *handler.ReferenceHandler
-	Load      *handler.LoadHandler
-	Booking   *handler.BookingHandler
-	Trip      *handler.TripHandler
+	Health       *handler.HealthHandler
+	Auth         *handler.AuthHandler
+	Driver       *handler.DriverHandler
+	Company      *handler.CompanyHandler
+	File         *handler.FileHandler
+	Reference    *handler.ReferenceHandler
+	Load         *handler.LoadHandler
+	Booking      *handler.BookingHandler
+	Trip         *handler.TripHandler
+	Chat         *handler.ChatHandler
+	Notification *handler.NotificationHandler
+	WS           *ws.Handler
 }
 
 // NewContainer builds every dependency, failing fast on any misconfiguration.
@@ -139,30 +151,45 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 	v := validator.New()
 
 	repos := Repositories{
-		Tx:          repository.NewTxManager(db.DB),
-		Audit:       repository.NewAuditLogger(db.DB, log),
-		Users:       repository.NewUserRepository(db.DB),
-		Roles:       repository.NewRoleRepository(db.DB),
-		Sessions:    repository.NewSessionRepository(db.DB),
-		OTPs:        repository.NewOTPRepository(db.DB),
-		Resets:      repository.NewPasswordResetRepository(db.DB),
-		Identity:    repository.NewIdentityRepository(db.DB),
-		Files:       repository.NewFileRepository(db.DB),
-		Geo:         repository.NewGeoRepository(db.DB),
-		Drivers:     repository.NewDriverRepository(db.DB),
-		DriverDocs:  repository.NewDriverDocumentRepository(db.DB),
-		Vehicles:    repository.NewVehicleRepository(db.DB),
-		DriverPrefs: repository.NewDriverPreferenceRepository(db.DB),
-		Locations:   repository.NewLocationRepository(db.DB),
-		Companies:   repository.NewCompanyRepository(db.DB),
-		CompanyDocs: repository.NewCompanyDocumentRepository(db.DB),
-		Loads:       repository.NewLoadRepository(db.DB),
-		CargoTypes:  repository.NewCargoTypeRepository(db.DB),
-		Saved:       repository.NewSavedRepository(db.DB),
-		Bookings:    repository.NewBookingRepository(db.DB),
-		Trips:       repository.NewTripRepository(db.DB),
-		Ratings:     repository.NewRatingRepository(db.DB),
-		Settings:    repository.NewSettingsRepository(db.DB, log),
+		Tx:            repository.NewTxManager(db.DB),
+		Audit:         repository.NewAuditLogger(db.DB, log),
+		Users:         repository.NewUserRepository(db.DB),
+		Roles:         repository.NewRoleRepository(db.DB),
+		Sessions:      repository.NewSessionRepository(db.DB),
+		OTPs:          repository.NewOTPRepository(db.DB),
+		Resets:        repository.NewPasswordResetRepository(db.DB),
+		Identity:      repository.NewIdentityRepository(db.DB),
+		Files:         repository.NewFileRepository(db.DB),
+		Geo:           repository.NewGeoRepository(db.DB),
+		Drivers:       repository.NewDriverRepository(db.DB),
+		DriverDocs:    repository.NewDriverDocumentRepository(db.DB),
+		Vehicles:      repository.NewVehicleRepository(db.DB),
+		DriverPrefs:   repository.NewDriverPreferenceRepository(db.DB),
+		Locations:     repository.NewLocationRepository(db.DB),
+		Companies:     repository.NewCompanyRepository(db.DB),
+		CompanyDocs:   repository.NewCompanyDocumentRepository(db.DB),
+		Loads:         repository.NewLoadRepository(db.DB),
+		CargoTypes:    repository.NewCargoTypeRepository(db.DB),
+		Saved:         repository.NewSavedRepository(db.DB),
+		Bookings:      repository.NewBookingRepository(db.DB),
+		Trips:         repository.NewTripRepository(db.DB),
+		Ratings:       repository.NewRatingRepository(db.DB),
+		Settings:      repository.NewSettingsRepository(db.DB, log),
+		Chat:          repository.NewChatRepository(db.DB),
+		Notifications: repository.NewNotificationRepository(db.DB),
+	}
+
+	// The realtime hub and its publisher must exist before any usecase that
+	// emits events, so it is constructed here and started by the server.
+	hub := ws.NewHub(redisCache, repos.Companies, log)
+	eventPublisher := ws.NewPublisher(hub)
+
+	pushSender, err := push.New(context.Background(), cfg.FCM, log)
+	if err != nil {
+		// Push is a delivery channel, not a prerequisite: in-app notifications
+		// still work, so this degrades rather than blocking start-up.
+		log.Warn("push notifications unavailable", logger.Err(err))
+		pushSender = nil
 	}
 
 	authUsecase := usecase.NewAuthUsecase(
@@ -171,20 +198,23 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 		tokens, hasher, smsSender, redisCache, cfg, log,
 	)
 	fileUsecase := usecase.NewFileUsecase(repos.Files, objectStorage, cfg, log)
+	notificationUsecase := usecase.NewNotificationUsecase(
+		repos.Notifications, repos.Users, pushSender, eventPublisher, log,
+	)
+	chatUsecase := usecase.NewChatUsecase(
+		repos.Chat, repos.Bookings, repos.Drivers, repos.Companies, repos.Users,
+		fileUsecase, repos.Tx, eventPublisher, notificationUsecase, hub, log,
+	)
 	driverUsecase := usecase.NewDriverUsecase(
 		repos.Drivers, repos.DriverDocs, repos.Vehicles, repos.DriverPrefs,
-		repos.Users, repos.Geo, fileUsecase, repos.Tx, repos.Audit, redisCache, log,
+		repos.Users, repos.Geo, repos.Locations, fileUsecase, repos.Tx,
+		repos.Audit, redisCache, log,
 	)
 	companyUsecase := usecase.NewCompanyUsecase(
 		repos.Companies, repos.CompanyDocs, repos.Users, repos.Roles, repos.Geo,
 		fileUsecase, repos.Tx, repos.Audit, redisCache, log,
 	)
 	referenceUsecase := usecase.NewReferenceUsecase(repos.Geo, redisCache, log)
-
-	// The realtime publisher and notifier arrive with the realtime module; the
-	// usecases treat both as optional so the marketplace works without them.
-	var eventPublisher domain.EventPublisher
-	var notifier domain.Notifier
 
 	loadUsecase := usecase.NewLoadUsecase(
 		repos.Loads, repos.CargoTypes, repos.Saved, repos.Bookings, repos.Companies,
@@ -194,13 +224,18 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 	bookingUsecase := usecase.NewBookingUsecase(
 		repos.Bookings, repos.Loads, repos.Trips, repos.Drivers, repos.Vehicles,
 		repos.Companies, repos.Users, fileUsecase, repos.Tx, repos.Audit,
-		eventPublisher, notifier, log,
+		eventPublisher, notificationUsecase, log,
 	)
 	tripUsecase := usecase.NewTripUsecase(
 		repos.Trips, repos.Bookings, repos.Loads, repos.Drivers, repos.Companies,
 		repos.Ratings, repos.Locations, fileUsecase, repos.Settings, repos.Tx,
-		repos.Audit, eventPublisher, notifier, log,
+		repos.Audit, eventPublisher, notificationUsecase, log,
 	)
+
+	// The socket router is built last: it depends on the chat, driver and trip
+	// usecases, which in turn depend on the hub the router drives.
+	wsRouter := ws.NewRouter(hub, chatUsecase, driverUsecase, tripUsecase, log)
+	wsHandler := ws.NewHandler(hub, wsRouter, tokens, repos.Users, log)
 
 	authMiddleware := middleware.NewAuthMiddleware(tokens, repos.Users, redisCache, log)
 
@@ -216,26 +251,32 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 		Validator: v,
 		Repos:     repos,
 		Usecases: Usecases{
-			Auth:      authUsecase,
-			File:      fileUsecase,
-			Driver:    driverUsecase,
-			Company:   companyUsecase,
-			Reference: referenceUsecase,
-			Load:      loadUsecase,
-			Booking:   bookingUsecase,
-			Trip:      tripUsecase,
+			Auth:         authUsecase,
+			File:         fileUsecase,
+			Driver:       driverUsecase,
+			Company:      companyUsecase,
+			Reference:    referenceUsecase,
+			Load:         loadUsecase,
+			Booking:      bookingUsecase,
+			Trip:         tripUsecase,
+			Chat:         chatUsecase,
+			Notification: notificationUsecase,
 		},
 		Handlers: Handlers{
-			Health:    handler.NewHealthHandler(db, redisCache, Version, cfg.App.Env),
-			Auth:      handler.NewAuthHandler(authUsecase, v),
-			Driver:    handler.NewDriverHandler(driverUsecase, repos.Locations, v),
-			Company:   handler.NewCompanyHandler(companyUsecase, v),
-			File:      handler.NewFileHandler(fileUsecase, v),
-			Reference: handler.NewReferenceHandler(referenceUsecase),
-			Load:      handler.NewLoadHandler(loadUsecase, v),
-			Booking:   handler.NewBookingHandler(bookingUsecase, v),
-			Trip:      handler.NewTripHandler(tripUsecase, v),
+			Health:       handler.NewHealthHandler(db, redisCache, Version, cfg.App.Env),
+			Auth:         handler.NewAuthHandler(authUsecase, v),
+			Driver:       handler.NewDriverHandler(driverUsecase, v),
+			Company:      handler.NewCompanyHandler(companyUsecase, v),
+			File:         handler.NewFileHandler(fileUsecase, v),
+			Reference:    handler.NewReferenceHandler(referenceUsecase),
+			Load:         handler.NewLoadHandler(loadUsecase, v),
+			Booking:      handler.NewBookingHandler(bookingUsecase, v),
+			Trip:         handler.NewTripHandler(tripUsecase, v),
+			Chat:         handler.NewChatHandler(chatUsecase, v),
+			Notification: handler.NewNotificationHandler(notificationUsecase, chatUsecase, v),
+			WS:           wsHandler,
 		},
+		Hub:  hub,
 		Auth: authMiddleware,
 	}, nil
 }

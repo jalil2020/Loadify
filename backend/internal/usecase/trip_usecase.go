@@ -426,6 +426,19 @@ func (u *TripUsecase) Track(ctx context.Context, userID, tripID uuid.UUID, isAdm
 	return res, nil
 }
 
+// CanWatchTrip authorises a client to subscribe to a trip's live position.
+//
+// Live location is the most sensitive data on the platform — it says where a
+// person physically is — so the socket asks this before adding a watcher, and
+// only the trip's two parties pass.
+func (u *TripUsecase) CanWatchTrip(ctx context.Context, userID, tripID uuid.UUID) error {
+	trip, err := u.trips.FindByID(ctx, tripID)
+	if err != nil {
+		return err
+	}
+	return u.assertParticipant(ctx, userID, trip)
+}
+
 // AddDocument attaches a paper to a trip.
 func (u *TripUsecase) AddDocument(ctx context.Context, userID, tripID uuid.UUID, req dto.AddTripDocumentRequest) (*dto.TripDocumentResponse, error) {
 	trip, err := u.trips.FindByID(ctx, tripID)

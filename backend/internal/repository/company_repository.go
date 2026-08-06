@@ -180,6 +180,20 @@ func (r *companyRepository) RemoveMember(ctx context.Context, id uuid.UUID) erro
 	return translate(err, "company member")
 }
 
+// ActiveMemberUserIDs implements domain.CompanyMemberLookup. It returns only the
+// ids because that is all the realtime fan-out needs, and it is called on every
+// company-scoped event.
+func (r *companyRepository) ActiveMemberUserIDs(ctx context.Context, companyID uuid.UUID) ([]uuid.UUID, error) {
+	var ids []uuid.UUID
+	err := r.DB(ctx).Model(&domain.CompanyMember{}).
+		Where("company_id = ? AND is_active AND deleted_at IS NULL", companyID).
+		Pluck("user_id", &ids).Error
+	if err != nil {
+		return nil, translate(err, "company member")
+	}
+	return ids, nil
+}
+
 func (r *companyRepository) CountMembers(ctx context.Context, companyID uuid.UUID, role domain.MemberRole) (int64, error) {
 	q := r.DB(ctx).Model(&domain.CompanyMember{}).
 		Where("company_id = ? AND is_active", companyID)

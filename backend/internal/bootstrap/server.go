@@ -45,15 +45,18 @@ func NewFiberApp(c *Container) *fiber.App {
 		c.Cfg.Security.RateLimitMax, c.Cfg.Security.RateLimitWindow))
 
 	route.Register(app, route.Handlers{
-		Health:    c.Handlers.Health,
-		Auth:      c.Handlers.Auth,
-		Driver:    c.Handlers.Driver,
-		Company:   c.Handlers.Company,
-		File:      c.Handlers.File,
-		Reference: c.Handlers.Reference,
-		Load:      c.Handlers.Load,
-		Booking:   c.Handlers.Booking,
-		Trip:      c.Handlers.Trip,
+		Health:       c.Handlers.Health,
+		Auth:         c.Handlers.Auth,
+		Driver:       c.Handlers.Driver,
+		Company:      c.Handlers.Company,
+		File:         c.Handlers.File,
+		Reference:    c.Handlers.Reference,
+		Load:         c.Handlers.Load,
+		Booking:      c.Handlers.Booking,
+		Trip:         c.Handlers.Trip,
+		Chat:         c.Handlers.Chat,
+		Notification: c.Handlers.Notification,
+		WS:           c.Handlers.WS,
 	}, route.Deps{
 		Cfg:   c.Cfg,
 		Auth:  c.Auth,
@@ -87,6 +90,15 @@ func recoverPanics(log logger.Logger) fiber.Handler {
 func Run(c *Container, app *fiber.App) error {
 	addr := fmt.Sprintf(":%d", c.Cfg.App.Port)
 
+	// The hub's Redis subscription runs for the life of the process. Its context
+	// is cancelled before the HTTP shutdown so no new events arrive while
+	// connections are draining.
+	hubCtx, stopHub := context.WithCancel(context.Background())
+	defer stopHub()
+	if c.Hub != nil {
+		go c.Hub.Run(hubCtx)
+	}
+
 	serverErr := make(chan error, 1)
 	go func() {
 		c.Log.Info("http server listening",
@@ -110,6 +122,13 @@ func Run(c *Container, app *fiber.App) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), c.Cfg.App.ShutdownGrace)
 	defer cancel()
+
+	// Close sockets first: a client that reconnects should find the next node,
+	// not a half-shut one.
+	if c.Hub != nil {
+		stopHub()
+		c.Hub.Close()
+	}
 
 	if err := app.ShutdownWithContext(ctx); err != nil {
 		c.Log.Error("graceful shutdown failed", logger.Err(err))

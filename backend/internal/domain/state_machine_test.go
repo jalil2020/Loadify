@@ -32,14 +32,14 @@ func TestLoadTerminalStatesAreFinal(t *testing.T) {
 
 func TestLoadCannotSkipStages(t *testing.T) {
 	forbidden := []struct{ from, to LoadStatus }{
-		{LoadDraft, LoadAssigned},     // no driver can be assigned to a draft
-		{LoadDraft, LoadInTransit},    // nothing is moving yet
-		{LoadPublished, LoadDelivered},// delivery without a trip
+		{LoadDraft, LoadAssigned},      // no driver can be assigned to a draft
+		{LoadDraft, LoadInTransit},     // nothing is moving yet
+		{LoadPublished, LoadDelivered}, // delivery without a trip
 		{LoadPublished, LoadCompleted},
-		{LoadReserved, LoadInTransit}, // a reservation is not an agreement
-		{LoadAssigned, LoadDelivered}, // must pass through in_transit
-		{LoadInTransit, LoadPublished},// cargo on a truck cannot be re-listed
-		{LoadDelivered, LoadCancelled},// delivered goods cannot be un-delivered
+		{LoadReserved, LoadInTransit},  // a reservation is not an agreement
+		{LoadAssigned, LoadDelivered},  // must pass through in_transit
+		{LoadInTransit, LoadPublished}, // cargo on a truck cannot be re-listed
+		{LoadDelivered, LoadCancelled}, // delivered goods cannot be un-delivered
 	}
 	for _, tc := range forbidden {
 		if tc.from.CanTransitionTo(tc.to) {

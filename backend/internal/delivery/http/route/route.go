@@ -10,6 +10,7 @@ import (
 	"github.com/loadify/backend/internal/config"
 	"github.com/loadify/backend/internal/delivery/http/handler"
 	"github.com/loadify/backend/internal/delivery/http/middleware"
+	"github.com/loadify/backend/internal/delivery/ws"
 	"github.com/loadify/backend/internal/domain"
 	"github.com/loadify/backend/internal/infrastructure/cache"
 	"github.com/loadify/backend/pkg/logger"
@@ -17,15 +18,20 @@ import (
 
 // Handlers bundles every handler the router needs.
 type Handlers struct {
-	Health    *handler.HealthHandler
-	Auth      *handler.AuthHandler
-	Driver    *handler.DriverHandler
-	Company   *handler.CompanyHandler
-	File      *handler.FileHandler
-	Reference *handler.ReferenceHandler
-	Load      *handler.LoadHandler
-	Booking   *handler.BookingHandler
-	Trip      *handler.TripHandler
+	Health       *handler.HealthHandler
+	Auth         *handler.AuthHandler
+	Driver       *handler.DriverHandler
+	Company      *handler.CompanyHandler
+	File         *handler.FileHandler
+	Reference    *handler.ReferenceHandler
+	Load         *handler.LoadHandler
+	Booking      *handler.BookingHandler
+	Trip         *handler.TripHandler
+	Chat         *handler.ChatHandler
+	Notification *handler.NotificationHandler
+	// WS is the WebSocket entry point. It is nil when realtime is disabled, in
+	// which case the /ws route is simply not mounted.
+	WS *ws.Handler
 }
 
 // Deps is everything route registration needs beyond the handlers.
@@ -51,7 +57,50 @@ func Register(app *fiber.App, h Handlers, d Deps) {
 	registerLoadRoutes(v1, h, d)
 	registerBookingRoutes(v1, h, d)
 	registerTripRoutes(v1, h, d)
+	registerChatRoutes(v1, h, d)
+	registerNotificationRoutes(v1, h, d)
+	registerWebSocketRoutes(v1, h)
 	registerAdminRoutes(v1, h, d)
+}
+
+// registerChatRoutes mounts /api/v1/chats.
+func registerChatRoutes(v1 fiber.Router, h Handlers, d Deps) {
+	chats := v1.Group("/chats", d.Auth.Authenticate(), d.Auth.RequirePermission("chat.read"))
+
+	chats.Get("/", h.Chat.ListRooms)
+	chats.Post("/booking/:booking_id", d.Auth.RequirePermission("chat.write"), h.Chat.EnsureBookingRoom)
+	chats.Get("/:id", h.Chat.Get)
+	chats.Get("/:id/messages", h.Chat.ListMessages)
+	chats.Post("/:id/messages", d.Auth.RequirePermission("chat.write"), h.Chat.SendMessage)
+	chats.Post("/:id/read", h.Chat.MarkRead)
+	chats.Patch("/:id/mute", h.Chat.SetMuted)
+}
+
+// registerNotificationRoutes mounts /api/v1/notifications.
+//
+// These need no extra permission: every authenticated principal has an inbox.
+func registerNotificationRoutes(v1 fiber.Router, h Handlers, d Deps) {
+	notifications := v1.Group("/notifications", d.Auth.Authenticate())
+
+	notifications.Get("/", h.Notification.List)
+	notifications.Get("/unread-count", h.Notification.UnreadCount)
+	notifications.Post("/read", h.Notification.MarkRead)
+	notifications.Get("/preferences", h.Notification.ListPreferences)
+	notifications.Put("/preferences", h.Notification.SavePreference)
+	notifications.Post("/devices", h.Notification.RegisterDevice)
+	notifications.Delete("/devices", h.Notification.UnregisterDevice)
+}
+
+// registerWebSocketRoutes mounts the realtime endpoint.
+//
+// The socket does its own token check in Upgrade rather than reusing the HTTP
+// auth middleware: a browser cannot set an Authorization header on a WebSocket
+// handshake, so the token may arrive as a query parameter.
+func registerWebSocketRoutes(v1 fiber.Router, h Handlers) {
+	if h.WS == nil {
+		return
+	}
+	v1.Get("/ws", h.WS.Upgrade, h.WS.Serve())
 }
 
 // registerAuthRoutes mounts /api/v1/auth.

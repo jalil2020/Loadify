@@ -149,6 +149,16 @@ type CompanyRepository interface {
 	ListMembers(ctx context.Context, companyID uuid.UUID, activeOnly bool) ([]CompanyMember, error)
 	RemoveMember(ctx context.Context, id uuid.UUID) error
 	CountMembers(ctx context.Context, companyID uuid.UUID, role MemberRole) (int64, error)
+	ActiveMemberUserIDs(ctx context.Context, companyID uuid.UUID) ([]uuid.UUID, error)
+}
+
+// CompanyMemberLookup resolves a company to its active members' user ids.
+//
+// The realtime hub needs this for company-scoped fan-out but has no business
+// knowing about the rest of the company repository, so it depends on this
+// one-method port instead.
+type CompanyMemberLookup interface {
+	ActiveMemberUserIDs(ctx context.Context, companyID uuid.UUID) ([]uuid.UUID, error)
 }
 
 // CompanyDocumentRepository persists company papers.

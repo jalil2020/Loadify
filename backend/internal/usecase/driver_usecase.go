@@ -17,17 +17,18 @@ import (
 
 // DriverUsecase owns driver profiles, documents, vehicles and availability.
 type DriverUsecase struct {
-	drivers  domain.DriverRepository
-	docs     domain.DriverDocumentRepository
-	vehicles domain.VehicleRepository
-	prefs    domain.DriverPreferenceRepository
-	users    domain.UserRepository
-	geo      domain.GeoRepository
-	files    *FileUsecase
-	tx       domain.TxManager
-	audit    domain.AuditLogger
-	cache    cache.Cache
-	log      logger.Logger
+	drivers   domain.DriverRepository
+	docs      domain.DriverDocumentRepository
+	vehicles  domain.VehicleRepository
+	prefs     domain.DriverPreferenceRepository
+	users     domain.UserRepository
+	geo       domain.GeoRepository
+	locations domain.LocationRepository
+	files     *FileUsecase
+	tx        domain.TxManager
+	audit     domain.AuditLogger
+	cache     cache.Cache
+	log       logger.Logger
 }
 
 // NewDriverUsecase wires the driver usecase.
@@ -38,6 +39,7 @@ func NewDriverUsecase(
 	prefs domain.DriverPreferenceRepository,
 	users domain.UserRepository,
 	geoRepo domain.GeoRepository,
+	locations domain.LocationRepository,
 	files *FileUsecase,
 	tx domain.TxManager,
 	audit domain.AuditLogger,
@@ -46,8 +48,8 @@ func NewDriverUsecase(
 ) *DriverUsecase {
 	return &DriverUsecase{
 		drivers: drivers, docs: docs, vehicles: vehicles, prefs: prefs,
-		users: users, geo: geoRepo, files: files, tx: tx, audit: audit,
-		cache: c, log: log,
+		users: users, geo: geoRepo, locations: locations, files: files,
+		tx: tx, audit: audit, cache: c, log: log,
 	}
 }
 
@@ -164,26 +166,15 @@ func (u *DriverUsecase) SetStatus(ctx context.Context, userID uuid.UUID, req dto
 	return u.drivers.SetStatus(ctx, driver.ID, target)
 }
 
-// UpdateLocation records a position report and refreshes the driver's marker.
-func (u *DriverUsecase) UpdateLocation(ctx context.Context, userID uuid.UUID, req dto.UpdateDriverLocationRequest, locations domain.LocationRepository) error {
+// UpdateLocation records a position report submitted over REST.
+func (u *DriverUsecase) UpdateLocation(ctx context.Context, userID uuid.UUID, req dto.UpdateDriverLocationRequest) error {
 	point := geo.NewPoint(req.Lat, req.Lng)
 	if !point.Valid() {
 		return apperror.ErrValidation.WithMessage("Invalid coordinates")
 	}
 
-	driver, err := u.drivers.FindByUserID(ctx, userID)
-	if err != nil {
-		return err
-	}
-
 	recordedAt := time.Now().UTC()
 	if req.RecordedAt != nil {
-		// Accept back-dated points from an offline queue, but never a future
-		// timestamp — a device with a wrong clock would then block every
-		// subsequent update.
-		if req.RecordedAt.After(recordedAt.Add(time.Minute)) {
-			return apperror.ErrValidation.WithMessage("recorded_at is in the future")
-		}
 		recordedAt = req.RecordedAt.UTC()
 	}
 
@@ -193,8 +184,7 @@ func (u *DriverUsecase) UpdateLocation(ctx context.Context, userID uuid.UUID, re
 		battery = &b
 	}
 
-	sample := domain.DriverLocation{
-		DriverID:     driver.ID,
+	return u.RecordLocation(ctx, userID, domain.DriverLocation{
 		TripID:       req.TripID,
 		Location:     point,
 		SpeedKmh:     req.SpeedKmh,
@@ -204,17 +194,48 @@ func (u *DriverUsecase) UpdateLocation(ctx context.Context, userID uuid.UUID, re
 		BatteryLevel: battery,
 		IsMoving:     req.SpeedKmh != nil && *req.SpeedKmh > 1,
 		RecordedAt:   recordedAt,
+	})
+}
+
+// RecordLocation stores one GPS sample and refreshes the driver's live marker.
+//
+// This is the shared entry point for both the REST endpoint and the WebSocket
+// channel, so the same validation and caching apply to a driver reporting every
+// 15 seconds over a socket and one posting a single fix over HTTP. The caller's
+// driver id is resolved here rather than trusted from the payload.
+func (u *DriverUsecase) RecordLocation(ctx context.Context, userID uuid.UUID, sample domain.DriverLocation) error {
+	if !sample.Location.Valid() {
+		return apperror.ErrValidation.WithMessage("Invalid coordinates")
 	}
-	if err := locations.InsertBatch(ctx, []domain.DriverLocation{sample}); err != nil {
+
+	driver, err := u.drivers.FindByUserID(ctx, userID)
+	if err != nil {
 		return err
 	}
-	if err := u.drivers.UpdateLocation(ctx, driver.ID, point, recordedAt); err != nil {
+	sample.DriverID = driver.ID
+
+	now := time.Now().UTC()
+	if sample.RecordedAt.IsZero() {
+		sample.RecordedAt = now
+	}
+	// Accept back-dated points from an offline queue, but never a future
+	// timestamp — a device with a wrong clock would then block every subsequent
+	// update, because UpdateLocation refuses to move the marker backwards.
+	if sample.RecordedAt.After(now.Add(time.Minute)) {
+		return apperror.ErrValidation.WithMessage("recorded_at is in the future")
+	}
+
+	if err := u.locations.InsertBatch(ctx, []domain.DriverLocation{sample}); err != nil {
+		return err
+	}
+	if err := u.drivers.UpdateLocation(ctx, driver.ID, sample.Location, sample.RecordedAt); err != nil {
 		return err
 	}
 
 	// Cache the latest fix so map queries never touch the partitioned table.
 	if err := u.cache.Set(ctx, cache.DriverLocationKey(driver.ID),
-		dto.PointResponse{Lat: point.Lat, Lng: point.Lng}, 10*time.Minute); err != nil {
+		dto.PointResponse{Lat: sample.Location.Lat, Lng: sample.Location.Lng},
+		10*time.Minute); err != nil {
 		u.log.Warn("caching driver location failed", logger.Err(err))
 	}
 	return nil

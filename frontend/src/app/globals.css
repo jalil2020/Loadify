@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Navy from the logo mark. */
+    --primary: 220 74% 33%;
+    --primary-foreground: 0 0% 100%;
+    /* The green arrow. */
+    --accent: 145 63% 42%;
+    --accent-foreground: 0 0% 100%;
+
+    --background: 210 20% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --muted: 210 16% 95%;
+    --muted-foreground: 215 16% 42%;
+    --border: 214 20% 88%;
+    --input: 214 20% 88%;
+    --ring: 220 74% 33%;
+
+    --destructive: 0 72% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 145 63% 36%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 46%;
+    --warning-foreground: 0 0% 100%;
+
+    --radius: 0.625rem;
+  }
+
+  .dark {
+    --background: 222 47% 8%;
+    --foreground: 210 20% 96%;
+    --card: 222 40% 12%;
+    --card-foreground: 210 20% 96%;
+    --muted: 217 30% 18%;
+    --muted-foreground: 215 18% 65%;
+    --border: 217 30% 20%;
+    --input: 217 30% 20%;
+
+    /* Lifted against the dark background so contrast stays readable. */
+    --primary: 218 82% 62%;
+    --primary-foreground: 222 47% 8%;
+    --accent: 145 58% 50%;
+    --ring: 218 82% 62%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Tabular figures keep money and weights aligned in tables, where a jittering
+     column is genuinely harder to scan. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  .skeleton {
+    @apply relative overflow-hidden rounded-md bg-muted;
+  }
+  .skeleton::after {
+    @apply absolute inset-0 -translate-x-full animate-shimmer;
+    content: "";
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      hsl(var(--foreground) / 0.06),
+      transparent
+    );
+  }
+}

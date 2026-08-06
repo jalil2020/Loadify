@@ -120,20 +120,45 @@ their access token expires — up to 15 minutes of a blocked account still tradi
 
 ---
 
-## Remaining work
+## Clients
 
-### Next.js web frontend
-Not started. Its API contract is fully specified in [API.md](API.md) and
-[openapi.yaml](../backend/docs/openapi.yaml), so it can be built against a
-running backend with no further backend changes.
+### Next.js web frontend — built
+Nine App Router routes over the live API: board, bookings, trips, my-loads,
+drivers, wallet, admin dashboard, login. uz/ru/en. Board, bookings and trips are
+single components that invert by role rather than duplicated per-role pages, and
+the UI gates on permissions rather than role names.
 
-Scope: design system, auth flows, company dashboard (loads, live driver map,
-trips, wallet, analytics), dispatcher board, admin panel, uz/ru/en.
+Verified end to end against the running stack: browse, filter, reserve, accept,
+run the trip machine, confirm delivery — with contact masking and 5% commission
+settling as designed.
 
-### Flutter mobile app
-Not started. Scope: driver auth and onboarding, document upload, load search with
-map, booking, trip execution over the WebSocket location channel, chat, wallet,
-offline queue.
+### Flutter driver app — built
+Four tabs: board with filters and "only loads my vehicle fits", bookings from
+both sides, trips with the seven-stage driver state machine, profile with
+availability, vehicles and wallet. uz/ru/en. Clean architecture per feature —
+domain entities import no framework; composition happens only in
+`app/providers.dart`.
+
+Foreground location reporting runs only while a trip is actually moving.
+`flutter analyze` is clean under strict-casts and strict-inference; 24 tests
+cover refresh behaviour, auth parsing, the trip machine, booking permissions and
+filter semantics.
+
+Not yet wired: FCM push, chat, in-app map rendering, registration/OTP.
+
+### What building the clients taught the backend
+
+**A wrong contract is worse than no contract.** The OpenAPI document described
+verify-otp, login and refresh as returning a bare `TokenPair`; all three actually
+return `{user, tokens}`. The web client faithfully implemented the document, so
+every session died silently fifteen minutes after sign-in — refresh returned 200,
+stored `undefined`, and every later request went out unauthenticated. The
+document is now correct and `cmd/speccheck` fails CI on a `$ref` that does not
+resolve. Both clients now parse the payload strictly, with regression tests.
+
+**`Scan` does not populate associations.** The load list returned every row with
+no pickup, no delivery and no shipper — the three things a board exists to show.
+Fixed with a batched hydrate.
 
 ### Backend follow-ups
 - Run the migrations against real PostGIS and fix what surfaces

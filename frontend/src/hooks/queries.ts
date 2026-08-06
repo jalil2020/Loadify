@@ -97,6 +97,11 @@ export interface LoadFilters {
   max_weight_kg?: number;
   min_price?: number;
   max_price?: number;
+  /** RFC 3339. Set by the parser when someone says "ertaga". */
+  pickup_from?: string;
+  pickup_to?: string;
+  requires_adr?: boolean;
+  requires_refrigeration?: boolean;
   fits_my_vehicle?: boolean;
   status?: string;
 }
@@ -222,6 +227,40 @@ export function useMe(options?: Partial<UseQueryOptions<CurrentUser>>) {
  * detail, so all three are invalidated. Under-invalidating here is what makes a
  * UI show a load as available seconds after the user took it.
  */
+/* ── Natural-language search ──────────────────────────────────────── */
+
+/** One understood filter, ready to render as a removable chip. */
+export interface ParsedChip {
+  /** The query parameter this chip controls; removing it drops that key. */
+  field: string;
+  label: string;
+  value: string;
+}
+
+export interface ParsedSearch {
+  target: "loads" | "drivers";
+  filters: Record<string, string[]>;
+  chips: ParsedChip[] | null;
+  /** Words that carried meaning but resolved to nothing. */
+  dropped: string[] | null;
+  /** Nothing was understood — leave the existing filters alone. */
+  empty: boolean;
+}
+
+/**
+ * Resolves a written request into filters.
+ *
+ * A mutation rather than a query: it runs when someone submits, not on every
+ * keystroke, and its result is applied to the board rather than cached against
+ * the phrase that produced it.
+ */
+export function useParseSearch() {
+  return useMutation({
+    mutationFn: async (input: { query: string; target?: "loads" | "drivers" }) =>
+      (await api.post<ParsedSearch>("/search/parse", input)).data,
+  });
+}
+
 export function useReserveLoad() {
   const qc = useQueryClient();
   return useMutation({

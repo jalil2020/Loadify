@@ -15,6 +15,7 @@ import {
   Select,
 } from "@/components/ui/primitives";
 import { useLoads, useRegions, useReserveLoad, useVehicleTypes, type LoadFilters } from "@/hooks/queries";
+import { SmartSearch } from "@/components/smart-search";
 import { ApiError } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 import type { Load } from "@/lib/types";
@@ -27,6 +28,10 @@ export default function LoadBoardPage() {
   const router = useRouter();
 
   const [filters, setFilters] = React.useState<LoadFilters>(EMPTY_FILTERS);
+  // Bumped whenever a dropdown is touched, which tells the search box its chips
+  // no longer describe what is on the board and should be dropped rather than
+  // left on screen saying something untrue.
+  const [manualEditAt, setManualEditAt] = React.useState(0);
   // A rejected reservation and a successful one are not the same news, so the
   // banner carries its tone: a failure is styled as a failure and announced
   // assertively, rather than sharing the neutral confirmation styling.
@@ -39,8 +44,16 @@ export default function LoadBoardPage() {
 
   // Changing a filter must reset to the first page, or the user lands on an
   // empty page 4 of a now-shorter result set.
-  const update = (patch: Partial<LoadFilters>) =>
+  const update = (patch: Partial<LoadFilters>) => {
+    setManualEditAt(Date.now());
     setFilters((prev) => ({ ...prev, ...patch, page: 1 }));
+  };
+
+  // A parsed search replaces the filter set rather than merging into it: the
+  // sentence describes the whole request, so leaving an earlier dropdown in
+  // place would silently narrow what was asked for.
+  const applyParsed = (parsed: LoadFilters) =>
+    setFilters({ ...EMPTY_FILTERS, ...parsed });
 
   const canReserve = can("bookings.create");
 
@@ -77,6 +90,19 @@ export default function LoadBoardPage() {
           <Button onClick={() => router.push("/my-loads")}>{t("loads.mine")}</Button>
         )}
       </header>
+
+      {/* One box that takes the request as a sentence, above the dropdowns
+          rather than instead of them: the sentence is faster when it works, and
+          the controls are still there when it does not. */}
+      <Card className="p-4">
+        <SmartSearch
+          regions={regions.data ?? []}
+          vehicleTypes={vehicleTypes.data ?? []}
+          onApply={applyParsed}
+          onClear={() => setFilters(EMPTY_FILTERS)}
+          invalidatedAt={manualEditAt}
+        />
+      </Card>
 
       <Card className="p-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">

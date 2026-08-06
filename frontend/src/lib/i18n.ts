@@ -40,6 +40,13 @@ const dictionary = {
     "board.reserving": "Bron qilinmoqda…",
     "board.contactHidden": "Bron qilgach koʻrinadi",
 
+    "search.label": "Aqlli qidiruv",
+    "search.placeholder": "Toshkentdan Samarqandga ertaga 20 tonna tent",
+    "search.submit": "Qidirish",
+    "search.removeChip": "olib tashlash",
+    "search.dropped": "Tushunilmadi:",
+    "search.notUnderstood": "Soʻrov tushunilmadi. Viloyat nomi va yuk turini yozib koʻring.",
+
     "filter.title": "Filtrlar",
     "filter.from": "Qayerdan",
     "filter.to": "Qayerga",
@@ -131,6 +138,13 @@ const dictionary = {
     "board.reserving": "Бронируем…",
     "board.contactHidden": "Откроется после брони",
 
+    "search.label": "Умный поиск",
+    "search.placeholder": "из Бухары в Самарканд завтра 20 тонн тент",
+    "search.submit": "Найти",
+    "search.removeChip": "убрать",
+    "search.dropped": "Не распознано:",
+    "search.notUnderstood": "Запрос не распознан. Укажите регион и тип груза.",
+
     "filter.title": "Фильтры",
     "filter.from": "Откуда",
     "filter.to": "Куда",
@@ -221,6 +235,13 @@ const dictionary = {
     "board.reserved": "Reserved",
     "board.reserving": "Reserving…",
     "board.contactHidden": "Shown after you reserve",
+
+    "search.label": "Smart search",
+    "search.placeholder": "from Bukhara to Samarkand tomorrow 20 t tent",
+    "search.submit": "Search",
+    "search.removeChip": "remove",
+    "search.dropped": "Not understood:",
+    "search.notUnderstood": "Could not read that. Try naming a region and a body type.",
 
     "filter.title": "Filters",
     "filter.from": "From",

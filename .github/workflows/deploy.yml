@@ -1,0 +1,87 @@
+name: Deploy
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        type: choice
+        options: [staging, production]
+
+# Never let two deploys touch the same environment at once, and never cancel one
+# mid-flight — a half-applied migration is worse than a slow queue.
+concurrency:
+  group: deploy-${{ inputs.environment || 'production' }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to ${{ inputs.environment || 'production' }}
+    runs-on: ubuntu-latest
+    environment:
+      # Production requires a reviewer approval, configured on the GitHub
+      # environment rather than in this file.
+      name: ${{ inputs.environment || 'production' }}
+      url: https://api.loadify.uz
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add the deploy key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      # Migrations run before the new image is released so the schema is ready
+      # for it. Every migration must be backward compatible with the version
+      # still running, or this window breaks the old pods.
+      - name: Run migrations
+        run: |
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'REMOTE'
+            set -euo pipefail
+            cd /opt/loadify
+            git fetch --tags && git checkout ${{ github.ref_name }}
+            docker compose -f deploy/docker-compose.yml pull migrate
+            docker compose -f deploy/docker-compose.yml run --rm migrate up
+          REMOTE
+
+      - name: Release the new image
+        run: |
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'REMOTE'
+            set -euo pipefail
+            cd /opt/loadify
+            docker compose -f deploy/docker-compose.yml pull api
+            # --no-deps so the database and Redis are not restarted with the API.
+            docker compose -f deploy/docker-compose.yml up -d --no-deps api
+            docker image prune -f --filter "until=168h"
+          REMOTE
+
+      - name: Wait for health
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl -fsS https://api.loadify.uz/health/ready > /dev/null; then
+              echo "healthy after ${attempt} attempts"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "the service did not become healthy within 150s"
+          exit 1
+
+      # The previous image is still on the host, so rolling back is a restart,
+      # not a rebuild.
+      - name: Roll back on failure
+        if: failure()
+        run: |
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'REMOTE'
+            set -euo pipefail
+            cd /opt/loadify
+            docker compose -f deploy/docker-compose.yml rollback 2>/dev/null || \
+            docker compose -f deploy/docker-compose.yml up -d --no-deps api
+          REMOTE
+          echo "::error::Deploy failed and the previous version was restored. Migrations were NOT reverted — check whether they are compatible with the running version."

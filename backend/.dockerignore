@@ -1,0 +1,17 @@
+# Build artefacts and anything the image must never carry.
+.git
+.gitignore
+*.md
+Dockerfile
+.dockerignore
+bin/
+tmp/
+*.exe
+*.test
+*.out
+coverage*
+.env
+.env.*
+secrets/
+docs/
+test/

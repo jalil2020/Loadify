@@ -205,6 +205,68 @@ paths:
                       data: { $ref: "#/components/schemas/User" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /search/parse:
+    post:
+      tags: [Search]
+      summary: Turn a written request into filters
+      description: |
+        Resolves a freight request written the way someone would say it —
+        "Toshkentdan Samarqandga ertaga 20 tonna tent" — into the query
+        parameters `/loads` and `/drivers` already accept.
+
+        It returns filters rather than results, deliberately. The client shows
+        them as removable chips before fetching anything, so a mis-parse is
+        visible and correctable rather than silently changing what was searched,
+        and search keeps exactly one implementation.
+
+        Rules-based, not a model: the vocabulary is closed, so Uzbek case
+        endings (`-dan` for origin, `-ga` for destination), Russian and English
+        prepositions, both scripts and every apostrophe variant all resolve
+        deterministically and offline. Names are resolved against the reference
+        vocabularies — an identifier is never invented, and anything
+        unresolvable comes back in `dropped` instead of quietly widening the
+        search.
+
+        The same utterance projects differently onto each side of the market: a
+        stated tonnage caps the freight worth showing a driver
+        (`max_weight_kg`) and floors the capacity worth showing a shipper
+        (`min_capacity_kg`).
+
+        Unauthenticated, like the board it feeds.
+      security:
+        - bearerAuth: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query:
+                  type: string
+                  minLength: 2
+                  maxLength: 280
+                  example: Toshkentdan Samarqandga ertaga 20 tonna tent
+                target:
+                  type: string
+                  enum: [loads, drivers]
+                  default: loads
+                  description: Which side of the market to project onto.
+      responses:
+        "200":
+          description: The parse
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ParsedSearch" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
   /loads:
     get:
       tags: [Loads]
@@ -683,6 +745,52 @@ components:
         company_role: { type: string, nullable: true }
         created_at: { type: string, format: date-time }
         last_login_at: { type: string, format: date-time, nullable: true }
+
+    ParsedSearch:
+      type: object
+      properties:
+        target:
+          type: string
+          enum: [loads, drivers]
+        filters:
+          type: object
+          additionalProperties:
+            type: array
+            items: { type: string }
+          description: |
+            Ready to send verbatim to `/loads` or `/drivers`. Values are arrays
+            because both endpoints read repeated keys as multi-value filters.
+          example:
+            pickup_region_id: ["765e9360-915e-4a65-b0bb-c8119ca6665b"]
+            delivery_region_id: ["c5b8b32d-8304-472a-8e7c-6cb90f7c13dc"]
+            vehicle_type: ["tent"]
+            max_weight_kg: ["20000"]
+        chips:
+          type: array
+          description: |
+            One entry per understood filter, localised for the request's
+            Accept-Language and ready to render as a removable chip. `field`
+            names the query parameter, so removing a chip means dropping that
+            key from `filters`.
+          items:
+            type: object
+            properties:
+              field: { type: string, example: pickup_region_id }
+              label: { type: string, example: Qayerdan }
+              value: { type: string }
+        dropped:
+          type: array
+          items: { type: string }
+          description: |
+            Words that carried meaning but could not be resolved — an unknown
+            region, a misspelling. Surfaced so the client can say the term was
+            ignored, rather than letting a search quietly run without it.
+          example: ["Qarshidan"]
+        empty:
+          type: boolean
+          description: |
+            Nothing was understood. The signal to leave the existing filters
+            alone rather than replace them with nothing.
 
     TokenPair:
       type: object

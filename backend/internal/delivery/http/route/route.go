@@ -24,6 +24,7 @@ type Handlers struct {
 	Company      *handler.CompanyHandler
 	File         *handler.FileHandler
 	Reference    *handler.ReferenceHandler
+	Search       *handler.SearchHandler
 	Load         *handler.LoadHandler
 	Booking      *handler.BookingHandler
 	Trip         *handler.TripHandler
@@ -53,6 +54,7 @@ func Register(app *fiber.App, h Handlers, d Deps) {
 
 	registerAuthRoutes(v1, h, d)
 	registerReferenceRoutes(v1, h, d)
+	registerSearchRoutes(v1, h, d)
 	registerFileRoutes(v1, h, d)
 	registerDriverRoutes(v1, h, d)
 	registerCompanyRoutes(v1, h, d)
@@ -178,6 +180,16 @@ func registerReferenceRoutes(v1 fiber.Router, h Handlers, _ Deps) {
 	ref.Get("/cities", h.Reference.Cities)
 	ref.Get("/vehicle-types", h.Reference.VehicleTypes)
 	ref.Get("/cargo-types", h.Load.CargoTypes)
+}
+
+// registerSearchRoutes mounts the natural-language parser.
+//
+// Unauthenticated, like the board it feeds: someone evaluating the app can
+// type a corridor and see it understood before signing up. It resolves names
+// against the public vocabularies and touches no account data.
+func registerSearchRoutes(v1 fiber.Router, h Handlers, d Deps) {
+	search := v1.Group("/search")
+	search.Post("/parse", d.Auth.Optional(), h.Search.Parse)
 }
 
 // registerSupportRoutes mounts complaints and public settings.

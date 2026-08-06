@@ -18,6 +18,11 @@ const (
 	LocaleEN Locale = "en"
 )
 
+// AllLocales is the canonical list, for anything that has to cover every
+// language rather than serve one — search has to resolve a name written in any
+// of them regardless of which the interface is set to.
+var AllLocales = []Locale{LocaleUZ, LocaleRU, LocaleEN}
+
 // Currency codes handled by the platform. Amounts are always minor units.
 const (
 	CurrencyUZS = "UZS"

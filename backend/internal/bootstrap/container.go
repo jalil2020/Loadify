@@ -94,6 +94,7 @@ type Usecases struct {
 	Driver       *usecase.DriverUsecase
 	Company      *usecase.CompanyUsecase
 	Reference    *usecase.ReferenceUsecase
+	Search       *usecase.SearchUsecase
 	Load         *usecase.LoadUsecase
 	Booking      *usecase.BookingUsecase
 	Trip         *usecase.TripUsecase
@@ -112,6 +113,7 @@ type Handlers struct {
 	Company      *handler.CompanyHandler
 	File         *handler.FileHandler
 	Reference    *handler.ReferenceHandler
+	Search       *handler.SearchHandler
 	Load         *handler.LoadHandler
 	Booking      *handler.BookingHandler
 	Trip         *handler.TripHandler
@@ -233,6 +235,7 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 		fileUsecase, repos.Tx, repos.Audit, redisCache, log,
 	)
 	referenceUsecase := usecase.NewReferenceUsecase(repos.Geo, redisCache, log)
+	searchUsecase := usecase.NewSearchUsecase(referenceUsecase, log)
 
 	loadUsecase := usecase.NewLoadUsecase(
 		repos.Loads, repos.CargoTypes, repos.Saved, repos.Bookings, repos.Companies,
@@ -301,6 +304,7 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 			Driver:       driverUsecase,
 			Company:      companyUsecase,
 			Reference:    referenceUsecase,
+			Search:       searchUsecase,
 			Load:         loadUsecase,
 			Booking:      bookingUsecase,
 			Trip:         tripUsecase,
@@ -317,6 +321,7 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 			Company:      handler.NewCompanyHandler(companyUsecase, v),
 			File:         handler.NewFileHandler(fileUsecase, v),
 			Reference:    handler.NewReferenceHandler(referenceUsecase),
+			Search:       handler.NewSearchHandler(searchUsecase, v),
 			Load:         handler.NewLoadHandler(loadUsecase, v),
 			Booking:      handler.NewBookingHandler(bookingUsecase, v),
 			Trip:         handler.NewTripHandler(tripUsecase, v),

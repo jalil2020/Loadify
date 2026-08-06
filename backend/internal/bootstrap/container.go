@@ -47,25 +47,42 @@ type Container struct {
 
 // Repositories groups the persistence adapters.
 type Repositories struct {
-	Tx       domain.TxManager
-	Audit    domain.AuditLogger
-	Users    domain.UserRepository
-	Roles    domain.RoleRepository
-	Sessions domain.SessionRepository
-	OTPs     domain.OTPRepository
-	Resets   domain.PasswordResetRepository
-	Identity domain.IdentityRepository
+	Tx          domain.TxManager
+	Audit       domain.AuditLogger
+	Users       domain.UserRepository
+	Roles       domain.RoleRepository
+	Sessions    domain.SessionRepository
+	OTPs        domain.OTPRepository
+	Resets      domain.PasswordResetRepository
+	Identity    domain.IdentityRepository
+	Files       domain.FileRepository
+	Geo         domain.GeoRepository
+	Drivers     domain.DriverRepository
+	DriverDocs  domain.DriverDocumentRepository
+	Vehicles    domain.VehicleRepository
+	DriverPrefs domain.DriverPreferenceRepository
+	Locations   domain.LocationRepository
+	Companies   domain.CompanyRepository
+	CompanyDocs domain.CompanyDocumentRepository
 }
 
 // Usecases groups the business-rule services.
 type Usecases struct {
-	Auth *usecase.AuthUsecase
+	Auth      *usecase.AuthUsecase
+	File      *usecase.FileUsecase
+	Driver    *usecase.DriverUsecase
+	Company   *usecase.CompanyUsecase
+	Reference *usecase.ReferenceUsecase
 }
 
 // Handlers groups the HTTP handlers.
 type Handlers struct {
-	Health *handler.HealthHandler
-	Auth   *handler.AuthHandler
+	Health    *handler.HealthHandler
+	Auth      *handler.AuthHandler
+	Driver    *handler.DriverHandler
+	Company   *handler.CompanyHandler
+	File      *handler.FileHandler
+	Reference *handler.ReferenceHandler
 }
 
 // NewContainer builds every dependency, failing fast on any misconfiguration.
@@ -109,14 +126,23 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 	v := validator.New()
 
 	repos := Repositories{
-		Tx:       repository.NewTxManager(db.DB),
-		Audit:    repository.NewAuditLogger(db.DB, log),
-		Users:    repository.NewUserRepository(db.DB),
-		Roles:    repository.NewRoleRepository(db.DB),
-		Sessions: repository.NewSessionRepository(db.DB),
-		OTPs:     repository.NewOTPRepository(db.DB),
-		Resets:   repository.NewPasswordResetRepository(db.DB),
-		Identity: repository.NewIdentityRepository(db.DB),
+		Tx:          repository.NewTxManager(db.DB),
+		Audit:       repository.NewAuditLogger(db.DB, log),
+		Users:       repository.NewUserRepository(db.DB),
+		Roles:       repository.NewRoleRepository(db.DB),
+		Sessions:    repository.NewSessionRepository(db.DB),
+		OTPs:        repository.NewOTPRepository(db.DB),
+		Resets:      repository.NewPasswordResetRepository(db.DB),
+		Identity:    repository.NewIdentityRepository(db.DB),
+		Files:       repository.NewFileRepository(db.DB),
+		Geo:         repository.NewGeoRepository(db.DB),
+		Drivers:     repository.NewDriverRepository(db.DB),
+		DriverDocs:  repository.NewDriverDocumentRepository(db.DB),
+		Vehicles:    repository.NewVehicleRepository(db.DB),
+		DriverPrefs: repository.NewDriverPreferenceRepository(db.DB),
+		Locations:   repository.NewLocationRepository(db.DB),
+		Companies:   repository.NewCompanyRepository(db.DB),
+		CompanyDocs: repository.NewCompanyDocumentRepository(db.DB),
 	}
 
 	authUsecase := usecase.NewAuthUsecase(
@@ -124,6 +150,16 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 		repos.Identity, repos.Tx, repos.Audit,
 		tokens, hasher, smsSender, redisCache, cfg, log,
 	)
+	fileUsecase := usecase.NewFileUsecase(repos.Files, objectStorage, cfg, log)
+	driverUsecase := usecase.NewDriverUsecase(
+		repos.Drivers, repos.DriverDocs, repos.Vehicles, repos.DriverPrefs,
+		repos.Users, repos.Geo, fileUsecase, repos.Tx, repos.Audit, redisCache, log,
+	)
+	companyUsecase := usecase.NewCompanyUsecase(
+		repos.Companies, repos.CompanyDocs, repos.Users, repos.Roles, repos.Geo,
+		fileUsecase, repos.Tx, repos.Audit, redisCache, log,
+	)
+	referenceUsecase := usecase.NewReferenceUsecase(repos.Geo, redisCache, log)
 
 	authMiddleware := middleware.NewAuthMiddleware(tokens, repos.Users, redisCache, log)
 
@@ -138,10 +174,20 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 		Hasher:    hasher,
 		Validator: v,
 		Repos:     repos,
-		Usecases:  Usecases{Auth: authUsecase},
+		Usecases: Usecases{
+			Auth:      authUsecase,
+			File:      fileUsecase,
+			Driver:    driverUsecase,
+			Company:   companyUsecase,
+			Reference: referenceUsecase,
+		},
 		Handlers: Handlers{
-			Health: handler.NewHealthHandler(db, redisCache, Version, cfg.App.Env),
-			Auth:   handler.NewAuthHandler(authUsecase, v),
+			Health:    handler.NewHealthHandler(db, redisCache, Version, cfg.App.Env),
+			Auth:      handler.NewAuthHandler(authUsecase, v),
+			Driver:    handler.NewDriverHandler(driverUsecase, repos.Locations, v),
+			Company:   handler.NewCompanyHandler(companyUsecase, v),
+			File:      handler.NewFileHandler(fileUsecase, v),
+			Reference: handler.NewReferenceHandler(referenceUsecase),
 		},
 		Auth: authMiddleware,
 	}, nil

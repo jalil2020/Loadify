@@ -45,8 +45,12 @@ func NewFiberApp(c *Container) *fiber.App {
 		c.Cfg.Security.RateLimitMax, c.Cfg.Security.RateLimitWindow))
 
 	route.Register(app, route.Handlers{
-		Health: c.Handlers.Health,
-		Auth:   c.Handlers.Auth,
+		Health:    c.Handlers.Health,
+		Auth:      c.Handlers.Auth,
+		Driver:    c.Handlers.Driver,
+		Company:   c.Handlers.Company,
+		File:      c.Handlers.File,
+		Reference: c.Handlers.Reference,
 	}, route.Deps{
 		Cfg:   c.Cfg,
 		Auth:  c.Auth,

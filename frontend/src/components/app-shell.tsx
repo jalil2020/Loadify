@@ -152,13 +152,35 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** The logo mark: a package moving right, in the brand navy and green. */
+/**
+ * The logo mark: an L carrying a package, opening into a forward arrow.
+ *
+ * Same geometry as the favicon and the Android launcher icon, so the three
+ * surfaces are recognisably one product. Colours come from the theme tokens
+ * rather than literals, which is what lets the mark stay legible in dark mode
+ * instead of sitting as a dark blue block on a dark background.
+ *
+ * The motion lines from the full logo are included here but not in the icon —
+ * a header renders large enough for them to read.
+ */
 function Logo({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 32 32" className={className} aria-hidden>
-      <path d="M5 6h6v14h9v6H5z" fill="hsl(var(--primary))" />
-      <path d="M20 12h7l4 5-4 5h-7z" fill="hsl(var(--accent))" />
-      <rect x="13" y="6" width="9" height="9" rx="1.5" fill="hsl(var(--primary))" opacity=".85" />
+    <svg viewBox="0 0 100 100" className={className} aria-hidden>
+      <g fill="hsl(var(--accent))">
+        <rect x="6" y="34" width="12" height="4.8" rx="2.4" />
+        <rect x="1" y="43.6" width="17" height="4.8" rx="2.4" />
+        <rect x="6" y="53.2" width="12" height="4.8" rx="2.4" />
+      </g>
+      <path fill="hsl(var(--primary))" d="M33 14h11v42h20v20H24V23a9 9 0 0 1 9-9z" />
+      <path fill="hsl(var(--accent))" d="M60 47l32 19-32 19z" />
+      <path
+        fill="hsl(var(--primary))"
+        stroke="hsl(var(--card))"
+        strokeWidth="3.2"
+        strokeLinejoin="round"
+        d="M45.5 18h27a3.5 3.5 0 0 1 3.5 3.5v23a3.5 3.5 0 0 1-3.5 3.5h-27a3.5 3.5 0 0 1-3.5-3.5v-23a3.5 3.5 0 0 1 3.5-3.5z"
+      />
+      <path stroke="hsl(var(--card))" strokeWidth="3.2" fill="none" d="M42 27h34M59 18v9" />
     </svg>
   );
 }

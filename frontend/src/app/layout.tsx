@@ -14,8 +14,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
+  // The logo's blue, which is what a mobile browser paints its chrome with.
+  // Kept as a literal because a meta tag cannot read a CSS custom property.
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#1a3a8f" },
+    { media: "(prefers-color-scheme: light)", color: "#1E56C9" },
     { media: "(prefers-color-scheme: dark)", color: "#0b1220" },
   ],
   width: "device-width",

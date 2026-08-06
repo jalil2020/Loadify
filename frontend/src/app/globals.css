@@ -4,26 +4,32 @@
 
 @layer base {
   :root {
-    /* Navy from the logo mark. */
-    --primary: 220 74% 33%;
+    /*
+     * Sampled from the logo: the L and the package (#1E56C9), the arrow and the
+     * "ify" (#2FAE4F), and the "Load" wordmark (#14275C). These three are the
+     * source of truth for the web; the Android side keeps the same values in
+     * res/values/colors.xml. Correcting a brand colour means touching both.
+     */
+    --primary: 220 74% 45%;
     --primary-foreground: 0 0% 100%;
-    /* The green arrow. */
-    --accent: 145 63% 42%;
+    --accent: 135 57% 43%;
     --accent-foreground: 0 0% 100%;
 
     --background: 210 20% 98%;
-    --foreground: 222 47% 11%;
+    /* The wordmark's navy rather than near-black: it is the darkest brand value
+       and sits better against the blue than a neutral would. */
+    --foreground: 224 64% 22%;
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 224 64% 22%;
     --muted: 210 16% 95%;
     --muted-foreground: 215 16% 42%;
     --border: 214 20% 88%;
     --input: 214 20% 88%;
-    --ring: 220 74% 33%;
+    --ring: 220 74% 45%;
 
     --destructive: 0 72% 48%;
     --destructive-foreground: 0 0% 100%;
-    --success: 145 63% 36%;
+    --success: 135 57% 36%;
     --success-foreground: 0 0% 100%;
     --warning: 38 92% 46%;
     --warning-foreground: 0 0% 100%;
@@ -41,11 +47,12 @@
     --border: 217 30% 20%;
     --input: 217 30% 20%;
 
-    /* Lifted against the dark background so contrast stays readable. */
-    --primary: 218 82% 62%;
+    /* Lifted against the dark background so contrast stays readable. The hues
+       are the logo's; only lightness moves. */
+    --primary: 220 82% 66%;
     --primary-foreground: 222 47% 8%;
-    --accent: 145 58% 50%;
-    --ring: 218 82% 62%;
+    --accent: 135 55% 55%;
+    --ring: 220 82% 66%;
   }
 
   * {

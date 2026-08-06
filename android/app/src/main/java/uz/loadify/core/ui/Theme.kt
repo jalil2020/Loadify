@@ -17,8 +17,15 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 
-private val Brand = Color(0xFF1B4DFF)
-private val Accent = Color(0xFF00A86B)
+/**
+ * Sampled from the logo. Kept in step with res/values/colors.xml, which is what
+ * the launcher icon reads — the two must not drift, or the app opens in a
+ * different blue than the icon the driver tapped.
+ */
+private val Brand = Color(0xFF1E56C9)
+private val Accent = Color(0xFF2FAE4F)
+private val Navy = Color(0xFF14275C)
+
 private val Warning = Color(0xFFF59E0B)
 private val Danger = Color(0xFFDC2626)
 
@@ -35,6 +42,9 @@ private val LightColors = lightColorScheme(
     error = Danger,
     background = Color(0xFFF6F7F9),
     surface = Color.White,
+    // The wordmark's navy, used for headings — it is the darkest brand value
+    // and reads better than pure black against the blue.
+    onSurface = Navy,
     surfaceContainerHighest = Color(0xFFE9ECF2),
     outlineVariant = Color(0xFFDDE1E9),
 )

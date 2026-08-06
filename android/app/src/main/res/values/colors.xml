@@ -1,10 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Brand colours, sampled from the logo. These three are the source of truth for
+  the Android side; Theme.kt reads the same values, so correcting one here means
+  correcting it in two places and nowhere else.
+-->
 <resources>
+    <!-- The L and the package. -->
+    <color name="brand_blue">#1E56C9</color>
+    <!-- The arrow and the "ify". -->
+    <color name="brand_green">#2FAE4F</color>
+    <!-- The "Load" wordmark. -->
+    <color name="brand_navy">#14275C</color>
+
+    <!-- The logo sits on white, so the icon does too. -->
+    <color name="ic_launcher_background">#FFFFFF</color>
+
     <!-- Matches the light scheme's background in Theme.kt, so the handover from
          the launch window to the first Compose frame is not a flash. -->
     <color name="launch_background">#F6F7F9</color>
-
-    <!-- Brand blue. Kept out of values-night: a launcher icon that changed with
-         the system theme would be a different icon to find on the home screen. -->
-    <color name="ic_launcher_background">#1B4DFF</color>
 </resources>

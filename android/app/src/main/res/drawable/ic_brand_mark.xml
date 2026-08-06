@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The mark on its own, edge to edge, for use inside the app where nothing crops
+  it. Same geometry as ic_launcher_foreground without the adaptive-icon safe
+  zone, plus the motion lines — this is drawn large enough for them to read.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
+
+    <path
+        android:fillColor="#2FAE4F"
+        android:pathData="M6,34 L18,34 A2.4,2.4 0 0 1 18,38.8 L6,38.8 A2.4,2.4 0 0 1 6,34 Z" />
+    <path
+        android:fillColor="#2FAE4F"
+        android:pathData="M1,43.6 L18,43.6 A2.4,2.4 0 0 1 18,48.4 L1,48.4 A2.4,2.4 0 0 1 1,43.6 Z" />
+    <path
+        android:fillColor="#2FAE4F"
+        android:pathData="M6,53.2 L18,53.2 A2.4,2.4 0 0 1 18,58 L6,58 A2.4,2.4 0 0 1 6,53.2 Z" />
+
+    <path
+        android:fillColor="#1E56C9"
+        android:pathData="M33,14 L44,14 L44,56 L64,56 L64,76 L24,76 L24,23 A9,9 0 0 1 33,14 Z" />
+
+    <path
+        android:fillColor="#2FAE4F"
+        android:pathData="M60,47 L92,66 L60,85 Z" />
+
+    <path
+        android:fillColor="#1E56C9"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.2"
+        android:strokeLineJoin="round"
+        android:pathData="M45.5,18 L72.5,18 A3.5,3.5 0 0 1 76,21.5 L76,44.5 A3.5,3.5 0 0 1 72.5,48 L45.5,48 A3.5,3.5 0 0 1 42,44.5 L42,21.5 A3.5,3.5 0 0 1 45.5,18 Z" />
+
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.2"
+        android:pathData="M42,27 L76,27" />
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.2"
+        android:pathData="M59,18 L59,27" />
+</vector>

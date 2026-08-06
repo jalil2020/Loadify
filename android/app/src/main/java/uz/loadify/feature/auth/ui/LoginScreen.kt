@@ -1,5 +1,6 @@
 package uz.loadify.feature.auth.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,7 +21,6 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material.icons.rounded.LocalShipping
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -43,6 +43,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -76,15 +77,16 @@ fun LoginScreen(
                     .verticalScroll(rememberScrollState())
                     .padding(24.dp),
             ) {
-                Icon(
-                    Icons.Rounded.LocalShipping,
+                // The brand mark, not a generic truck glyph: this is the first
+                // screen a driver sees and it should match the icon they tapped.
+                Image(
+                    painter = painterResource(R.drawable.ic_brand_mark),
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(52.dp),
+                    modifier = Modifier.size(76.dp),
                 )
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "Loadify",
+                    stringResource(R.string.app_name),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                 )

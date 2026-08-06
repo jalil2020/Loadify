@@ -1,0 +1,22 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+  errors:
+    # A missing await on a network call is a race, not a style preference.
+    unawaited_futures: error
+    # The API is the source of truth for shapes; an unchecked dynamic that
+    # slips through is how a client silently misreads a response.
+    invalid_assignment: error
+
+linter:
+  rules:
+    - always_declare_return_types
+    - avoid_dynamic_calls
+    - prefer_final_locals
+    - prefer_single_quotes
+    - unawaited_futures
+    - use_super_parameters

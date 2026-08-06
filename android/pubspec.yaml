@@ -1,0 +1,51 @@
+name: loadify
+description: Loadify driver app — the load board, bookings and trips in a driver's pocket.
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # State. Riverpod is chosen over Provider/Bloc because a driver screen is
+  # mostly "fetch, show, retry": AsyncValue models loading/data/error as one
+  # value, and providers are testable without pumping a widget tree.
+  flutter_riverpod: ^2.6.1
+
+  # Routing with typed redirects, so an unauthenticated deep link lands on
+  # login and returns to where it was going.
+  go_router: ^14.6.2
+
+  # HTTP. Dio's interceptor chain is what makes a single-flight token refresh
+  # expressible without wrapping every call site.
+  dio: ^5.7.0
+
+  # The refresh token is a bearer credential for the whole session, so it goes
+  # in the Keychain/Keystore rather than shared preferences.
+  flutter_secure_storage: ^9.2.2
+  shared_preferences: ^2.3.3
+
+  # Pinned by flutter_localizations from the SDK; a lower constraint makes
+  # version solving fail outright rather than resolving to something older.
+  intl: ^0.20.2
+
+  # Trip tracking: the driver's position is what the shipper is watching.
+  geolocator: ^13.0.2
+
+  # Live trip and chat updates over the same hub the web client uses.
+  web_socket_channel: ^3.0.1
+
+  url_launcher: ^6.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

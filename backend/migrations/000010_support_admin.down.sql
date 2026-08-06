@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS banners;
+DROP TABLE IF EXISTS faqs;
+DROP TABLE IF EXISTS cms_pages;
+DROP TABLE IF EXISTS feature_flags;
+DROP TABLE IF EXISTS system_settings;
+DROP TABLE IF EXISTS audit_logs;
+DROP TABLE IF EXISTS support_messages;
+DROP TABLE IF EXISTS support_tickets;
+DROP TABLE IF EXISTS complaints;

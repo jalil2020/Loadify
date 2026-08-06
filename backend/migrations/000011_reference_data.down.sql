@@ -1,0 +1,11 @@
+DELETE FROM feature_flags;
+DELETE FROM system_settings;
+DELETE FROM wallets WHERE owner_type = 'platform';
+DELETE FROM subscription_plans;
+DELETE FROM cargo_types;
+DELETE FROM cities;
+DELETE FROM regions;
+DELETE FROM countries;
+DELETE FROM role_permissions;
+DELETE FROM permissions;
+DELETE FROM roles;

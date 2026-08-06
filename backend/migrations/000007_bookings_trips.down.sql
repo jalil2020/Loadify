@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS ratings;
+DROP TABLE IF EXISTS trip_documents;
+DROP TABLE IF EXISTS trip_events;
+DROP TABLE IF EXISTS trips;
+DROP TABLE IF EXISTS bookings;

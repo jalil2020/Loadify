@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS refunds;
+DROP TABLE IF EXISTS invoices;
+DROP TABLE IF EXISTS payment_webhooks;
+DROP TABLE IF EXISTS escrows;
+DROP TABLE IF EXISTS wallet_transactions;
+DROP TABLE IF EXISTS wallets;
+DROP TABLE IF EXISTS subscriptions;
+DROP TABLE IF EXISTS payment_orders;
+DROP TABLE IF EXISTS subscription_plans;

@@ -1,0 +1,56 @@
+# Env
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Go
+backend/bin/
+backend/tmp/
+*.exe
+*.test
+*.out
+vendor/
+
+# Node
+node_modules/
+.next/
+out/
+build/
+dist/
+.turbo/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Flutter
+android/.dart_tool/
+android/.packages
+android/build/
+android/.flutter-plugins
+android/.flutter-plugins-dependencies
+android/ios/Pods/
+android/android/.gradle/
+android/android/local.properties
+android/**/GeneratedPluginRegistrant.*
+*.iml
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Data
+data/
+postgres-data/
+minio-data/
+redis-data/
+uploads/
+
+# Coverage
+coverage/
+coverage.out
+*.lcov

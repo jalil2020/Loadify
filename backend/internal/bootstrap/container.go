@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/loadify/backend/internal/ai"
 	"github.com/loadify/backend/internal/config"
 	"github.com/loadify/backend/internal/delivery/http/handler"
 	"github.com/loadify/backend/internal/delivery/http/middleware"
@@ -243,7 +244,18 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 
 	// The advert parser reads the same reference data as the marketplace search,
 	// through its own wider vocabulary: these corridors cross borders.
-	adParser := usecase.NewAdParser(repos.Geo, repos.CargoTypes, referenceUsecase, redisCache, cfg.App.Timezone, log)
+	var adExtractor domain.AdExtractor
+	if cfg.AI.Enabled() {
+		extractor, err := ai.NewExtractor(cfg.AI, log)
+		if err != nil {
+			// A misconfigured model must not stop the API: adverts are still read
+			// by the rules, and what they miss is reported rather than invented.
+			log.Warn("ai extractor unavailable, adverts will be read by the rules alone", logger.Err(err))
+		} else {
+			adExtractor = extractor
+		}
+	}
+	adParser := usecase.NewAdParser(repos.Geo, repos.CargoTypes, referenceUsecase, redisCache, cfg.App.Timezone, adExtractor, log)
 	loadAdUsecase := usecase.NewLoadAdUsecase(repos.LoadAds, adParser, repos.Audit, log)
 
 	loadUsecase := usecase.NewLoadUsecase(

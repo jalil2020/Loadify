@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/loadify/backend/internal/ai"
 	"github.com/loadify/backend/internal/domain"
 	"github.com/loadify/backend/internal/infrastructure/cache"
 	"github.com/loadify/backend/internal/nlq"
@@ -96,6 +97,7 @@ func NewAdParser(
 	reference *ReferenceUsecase,
 	c cache.Cache,
 	timezone string,
+	extractor domain.AdExtractor,
 	log logger.Logger,
 ) domain.LoadAdParser {
 	location, err := time.LoadLocation(timezone)
@@ -107,5 +109,11 @@ func NewAdParser(
 		location = nil
 	}
 	vocabulary := adVocabulary{geo: geoRepo, cargo: cargo, reference: reference, cache: c, log: log}
-	return nlq.NewAdParser(vocabulary, nil, location)
+	rules := nlq.NewAdParser(vocabulary, nil, location)
+	if extractor == nil {
+		// No model configured: the rules are the whole parser, and a field they
+		// cannot read is reported as missing rather than filled in.
+		return rules
+	}
+	return ai.NewGroundedParser(rules, extractor, vocabulary, log)
 }

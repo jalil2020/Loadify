@@ -39,15 +39,14 @@ const (
 	FieldFromUser FieldSource = "user"
 )
 
-// FieldOrigin is the provenance of one field: who resolved it and the words it
-// was resolved from.
-type FieldOrigin struct {
+// FieldProvenance says who resolved one field and from which words.
+type FieldProvenance struct {
 	Source   FieldSource `json:"source"`
 	Evidence string      `json:"evidence,omitempty"`
 }
 
 // FieldSources maps a field name to its provenance. It is stored as JSONB.
-type FieldSources map[string]FieldOrigin
+type FieldSources map[string]FieldProvenance
 
 // Value implements driver.Valuer.
 func (f FieldSources) Value() (driver.Value, error) {

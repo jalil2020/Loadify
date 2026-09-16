@@ -108,3 +108,33 @@ func surfacePhrase(scan *Scan, from, to int) string {
 	}
 	return strings.Join(parts, " ")
 }
+
+// arrowMarks are the ways an advert draws a corridor. They are punctuation, so
+// the tokeniser drops them; the text between two tokens is where they survive.
+var arrowMarks = []string{"→", "⟶", "➡", "->", "=>", "-->", ">"}
+
+// directionFromArrow reads an arrow beside a place: one pointing into the name
+// makes it the destination, one leading away from it makes it the origin.
+//
+// It matters more than it looks. "Ташкент → Москва" names two places and the
+// word order resolves it, but "Кашри → Москва" names one the platform knows and
+// one it does not, and without the arrow the only place left would be read as
+// the origin — the exact opposite of what the advert says.
+func directionFromArrow(scan *Scan, start, end int) direction {
+	if containsArrow(scan.Before(start)) {
+		return directionDestination
+	}
+	if containsArrow(scan.After(end - 1)) {
+		return directionOrigin
+	}
+	return directionUnknown
+}
+
+func containsArrow(gap string) bool {
+	for _, mark := range arrowMarks {
+		if strings.Contains(gap, mark) {
+			return true
+		}
+	}
+	return false
+}

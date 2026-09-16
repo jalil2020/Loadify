@@ -292,3 +292,34 @@ func TestCargoTypeIsResolved(t *testing.T) {
 		t.Errorf("cargo = %v, want the general cargo type", draft.Ad.CargoTypeID)
 	}
 }
+
+// A corridor written with a hyphen is as common as one written with an arrow,
+// and the tokeniser has to take the hyphen apart without taking Rostov-na-Donu
+// apart with it.
+func TestHyphenatedCorridor(t *testing.T) {
+	draft := parseAd(t, "Ташкент-Москва 20 тонн тент")
+
+	if draft.Ad.OriginCityID == nil || *draft.Ad.OriginCityID != tashkentCityID {
+		t.Errorf("origin = %v, want Tashkent", draft.Ad.OriginCityID)
+	}
+	if draft.Ad.DestCityID == nil || *draft.Ad.DestCityID != moscowCityID {
+		t.Errorf("destination = %v, want Moscow", draft.Ad.DestCityID)
+	}
+}
+
+// An arrow states the direction even when only one end resolves. Without it the
+// single known place would be read as the origin, which is the opposite of what
+// the advert says.
+func TestArrowSurvivesAnUnknownName(t *testing.T) {
+	draft := parseAd(t, "Кашри → Москва 20 тонн")
+
+	if draft.Ad.DestCityID == nil || *draft.Ad.DestCityID != moscowCityID {
+		t.Errorf("destination = %v, want Moscow", draft.Ad.DestCityID)
+	}
+	if draft.Ad.OriginCityID != nil {
+		t.Error("the unresolved origin must stay empty rather than take Moscow")
+	}
+	if len(draft.Dropped) != 1 || draft.Dropped[0] != "Кашри" {
+		t.Errorf("dropped = %v, want the name nothing understood", draft.Dropped)
+	}
+}

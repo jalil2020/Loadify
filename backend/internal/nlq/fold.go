@@ -50,6 +50,13 @@ func Fold(s string) string {
 
 	for _, r := range strings.ToLower(s) {
 		switch {
+		case r == '-':
+			// A hyphen joins two names as often as it belongs inside one:
+			// "Ташкент-Москва" is a corridor, "Rostov-na-Donu" is a city.
+			// Folding it to a space makes both work, because a hyphenated alias
+			// then matches a phrase of separate tokens.
+			b.WriteRune(' ')
+			continue
 		case strings.ContainsRune(apostrophes, r):
 			// Dropped rather than replaced: the whole point is that its
 			// presence or absence must not change the match.

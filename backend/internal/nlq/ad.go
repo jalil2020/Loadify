@@ -166,6 +166,9 @@ func (e *PlaceExtractor) Extract(scan *Scan, out *domain.AdDraft) {
 		if dir == directionUnknown {
 			dir = directionFromNeighbour(scan, start, end, e.Name())
 		}
+		if dir == directionUnknown {
+			dir = directionFromArrow(scan, start, end)
+		}
 		e.claims = append(e.claims, placeMention{place: place, dir: dir, evidence: evidence})
 	}
 

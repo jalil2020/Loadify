@@ -9,11 +9,17 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/loadify/backend/internal/config"
 	"github.com/loadify/backend/internal/domain"
 	"github.com/loadify/backend/internal/infrastructure/cache"
 	"github.com/loadify/backend/internal/infrastructure/crypto"
 	"github.com/loadify/backend/internal/infrastructure/database"
+	"github.com/loadify/backend/internal/infrastructure/queue"
+	"github.com/loadify/backend/internal/infrastructure/ratelimit"
+	"github.com/loadify/backend/internal/repository"
+	"github.com/loadify/backend/internal/worker"
 	"github.com/loadify/backend/pkg/logger"
 )
 
@@ -28,6 +34,15 @@ type PosterContainer struct {
 	DB    *database.DB
 	Cache cache.Cache
 	Vault domain.SessionVault
+
+	// Telegram is the client that actually sends. Until it is configured the
+	// worker runs its health loop and nothing else: relaying jobs to a queue
+	// nobody can drain would only fill Redis.
+	Telegram domain.TelegramSender
+
+	Relay  *worker.Relay
+	Sender *worker.Sender
+	Queue  *queue.Streams
 }
 
 // NewPosterContainer connects everything the worker needs, failing fast.
@@ -60,7 +75,34 @@ func NewPosterContainer(cfg *config.Config, log logger.Logger) (*PosterContainer
 		return nil, fmt.Errorf("session vault: %w", err)
 	}
 	container.Vault = vault
+
+	if container.Telegram == nil {
+		return container, nil
+	}
+	container.wire()
 	return container, nil
+}
+
+// wire builds the pipeline once a client exists.
+func (c *PosterContainer) wire() {
+	posting := repository.NewPostingRepository(c.DB.DB)
+	guard := ratelimit.NewGuard(c.Cache.Client(), c.Cfg.Telegram)
+
+	host, _ := os.Hostname()
+	// The owner names this process in every lease it takes, so a job stuck in
+	// processing can be traced to the worker that took it.
+	owner := fmt.Sprintf("%s-%s", host, uuid.NewString()[:8])
+
+	c.Queue = queue.NewStreams(c.Cache.Client(), owner,
+		2*c.Cfg.Telegram.LeaseTTL, c.Cfg.Telegram.LeaseTTL, c.Log)
+	c.Relay = worker.NewRelay(posting, c.Queue, time.Second, 100, c.Log)
+	c.Sender = worker.New(
+		posting,
+		repository.NewTelegramAccountRepository(c.DB.DB),
+		repository.NewTelegramGroupRepository(c.DB.DB),
+		repository.NewLoadAdRepository(c.DB.DB),
+		guard, c.Telegram, c.Vault, c.Cfg.Telegram, owner, c.Log,
+	)
 }
 
 // Close releases every resource the container owns.
@@ -94,13 +136,25 @@ func RunPoster(c *PosterContainer) error {
 	c.Log.Info("posting worker started",
 		logger.String("version", Version),
 		logger.String("env", c.Cfg.App.Env),
-		logger.Bool("telegram_configured", c.Cfg.Telegram.Enabled()))
-	if !c.Cfg.Telegram.Enabled() {
-		c.Log.Warn("telegram credentials are not configured: nothing will be sent")
-	}
+		logger.Bool("telegram_configured", c.Cfg.Telegram.Enabled()),
+		logger.Bool("client_ready", c.Sender != nil))
 
 	var wg sync.WaitGroup
 	wg.Go(func() { c.runHealthLoop(ctx) })
+
+	switch {
+	case !c.Cfg.Telegram.Enabled():
+		c.Log.Warn("telegram credentials are not configured: nothing will be sent")
+	case c.Sender == nil:
+		c.Log.Warn("no telegram client is wired into this build: nothing will be sent")
+	default:
+		wg.Go(func() { c.Relay.Run(ctx) })
+		wg.Go(func() {
+			if err := c.Queue.Consume(ctx, c.Sender.Process); err != nil {
+				c.Log.Error("queue consumer stopped", logger.Err(err))
+			}
+		})
+	}
 
 	<-ctx.Done()
 	c.Log.Info("shutdown signal received, draining")
@@ -115,9 +169,9 @@ func RunPoster(c *PosterContainer) error {
 	case <-drained:
 		c.Log.Info("shutdown complete")
 	case <-time.After(c.Cfg.App.ShutdownGrace):
-		// Whatever is still running holds a lease that will expire, and the
-		// relay will pick those jobs up again; saying so here is what makes the
-		// duplicate-looking retry explainable later.
+		// Whatever is still running holds a lease that will expire. The job
+		// that comes back from it is recognised as interrupted, and is not sent
+		// a second time unless random_id handling has been confirmed.
 		c.Log.Warn("grace period expired with work still in flight",
 			logger.Duration("grace", c.Cfg.App.ShutdownGrace))
 	}
@@ -140,7 +194,7 @@ func (c *PosterContainer) runHealthLoop(ctx context.Context) {
 			}
 			if err := c.Cache.Health(checkCtx); err != nil {
 				// Redis holds the rate limits, so this is not a degraded mode:
-				// the worker stops claiming rather than sending unmetered.
+				// the guard fails closed and nothing is sent.
 				c.Log.Error("redis unreachable, posting is paused", logger.Err(err))
 			}
 			cancel()

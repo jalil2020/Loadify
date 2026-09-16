@@ -2,6 +2,7 @@
 package logger
 
 import (
+	"io"
 	"os"
 
 	"go.uber.org/zap"
@@ -36,9 +37,13 @@ var (
 
 type zapLogger struct{ l *zap.Logger }
 
-// New builds a logger. Development mode uses human-readable console output;
-// anything else emits JSON for log shipping.
-func New(env, level string) Logger {
+// New builds a logger writing to stdout. Development mode uses human-readable
+// console output; anything else emits JSON for log shipping.
+func New(env, level string) Logger { return NewWithWriter(env, level, os.Stdout) }
+
+// NewWithWriter builds a logger writing to w. Tests use it to prove that a
+// secret never reaches a log line.
+func NewWithWriter(env, level string, w io.Writer) Logger {
 	var encoderCfg zapcore.EncoderConfig
 	var encoder zapcore.Encoder
 
@@ -54,7 +59,7 @@ func New(env, level string) Logger {
 		encoder = zapcore.NewJSONEncoder(encoderCfg)
 	}
 
-	core := zapcore.NewCore(encoder, zapcore.Lock(os.Stdout), parseLevel(level))
+	core := zapcore.NewCore(encoder, zapcore.Lock(zapcore.AddSync(w)), parseLevel(level))
 	return &zapLogger{l: zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1))}
 }
 

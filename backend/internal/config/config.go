@@ -4,6 +4,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
@@ -24,6 +25,8 @@ type Config struct {
 	FCM      FCMConfig
 	Maps     MapsConfig
 	Payment  PaymentConfig
+	Telegram TelegramConfig
+	AI       AIConfig
 }
 
 type AppConfig struct {
@@ -166,6 +169,94 @@ type UzumConfig struct {
 // Enabled reports whether Uzum can accept payments.
 func (c UzumConfig) Enabled() bool { return c.MerchantID != "" && c.SecretKey != "" }
 
+// TelegramConfig configures the MTProto client that posts on behalf of a
+// logistician's own Telegram account, plus the platform-wide ceilings that keep
+// that account out of trouble.
+//
+// Telegram publishes no numeric limits for user accounts, so these values are
+// our own conservative policy rather than a documented maximum. A tariff or a
+// group rule may lower them; nothing may raise them.
+type TelegramConfig struct {
+	APIID      int
+	APIHash    string
+	SessionKEK string // base64, 32 bytes: wraps every stored session
+	KEKVersion int
+	// PreviousKEK lets sessions sealed before a rotation still be opened.
+	PreviousKEK        string
+	PreviousKEKVersion int
+
+	DeviceModel string
+	AppVersion  string
+
+	AccountGap      time.Duration // minimum spacing between two posts of one account
+	AccountHourly   int
+	AccountDaily    int
+	GroupCooldown   time.Duration // floor; a group's own slow mode may be longer
+	GroupDaily      int
+	DuplicateWindow time.Duration // same load, same group
+	GlobalPerSecond int           // across every account: protects the shared api_id
+	MaxAttempts     int
+	LeaseTTL        time.Duration
+}
+
+// Enabled reports whether posting can run at all.
+func (t TelegramConfig) Enabled() bool {
+	return t.APIID != 0 && t.APIHash != "" && t.SessionKEK != ""
+}
+
+// KEKs returns the key-encryption keys by version, and the version new secrets
+// are sealed with.
+func (t TelegramConfig) KEKs() (map[int][]byte, int, error) {
+	keys := make(map[int][]byte, 2)
+	primary, err := decodeKEK(t.SessionKEK)
+	if err != nil {
+		return nil, 0, fmt.Errorf("TELEGRAM_SESSION_KEK: %w", err)
+	}
+	keys[t.KEKVersion] = primary
+	if t.PreviousKEK != "" {
+		previous, err := decodeKEK(t.PreviousKEK)
+		if err != nil {
+			return nil, 0, fmt.Errorf("TELEGRAM_SESSION_KEK_PREVIOUS: %w", err)
+		}
+		keys[t.PreviousKEKVersion] = previous
+	}
+	return keys, t.KEKVersion, nil
+}
+
+func decodeKEK(encoded string) ([]byte, error) {
+	raw, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("must be base64: %w", err)
+	}
+	if len(raw) != 32 {
+		return nil, fmt.Errorf("must decode to 32 bytes, got %d", len(raw))
+	}
+	return raw, nil
+}
+
+// AI provider values.
+const (
+	AIProviderNone   = "none"
+	AIProviderLLM    = "llm"
+	AIProviderHermes = "hermes"
+)
+
+// AIConfig configures the optional model-backed helpers. The platform works
+// without them: parsing falls back to the rules, ranking to the score.
+type AIConfig struct {
+	Provider  string // none | llm | hermes
+	BaseURL   string
+	APIKey    string
+	Model     string
+	Timeout   time.Duration
+	CacheTTL  time.Duration
+	HermesURL string
+	HermesKey string
+}
+
+// Enabled reports whether a model may be called at all.
+func (a AIConfig) Enabled() bool { return a.Provider != "" && a.Provider != AIProviderNone }
+
 // Load reads .env (when present) and the process environment, then validates.
 func Load(envFiles ...string) (*Config, error) {
 	for _, f := range envFiles {
@@ -269,6 +360,36 @@ func Load(envFiles ...string) (*Config, error) {
 		},
 	}
 
+	cfg.Telegram = TelegramConfig{
+		APIID:              getInt("TELEGRAM_API_ID", 0),
+		APIHash:            getString("TELEGRAM_API_HASH", ""),
+		SessionKEK:         getString("TELEGRAM_SESSION_KEK", ""),
+		KEKVersion:         getInt("TELEGRAM_SESSION_KEK_VERSION", 1),
+		PreviousKEK:        getString("TELEGRAM_SESSION_KEK_PREVIOUS", ""),
+		PreviousKEKVersion: getInt("TELEGRAM_SESSION_KEK_PREVIOUS_VERSION", 0),
+		DeviceModel:        getString("TELEGRAM_DEVICE_MODEL", "Loadify"),
+		AppVersion:         getString("TELEGRAM_APP_VERSION", "1.0"),
+		AccountGap:         getDuration("TELEGRAM_ACCOUNT_GAP", 90*time.Second),
+		AccountHourly:      getInt("TELEGRAM_ACCOUNT_HOURLY", 20),
+		AccountDaily:       getInt("TELEGRAM_ACCOUNT_DAILY", 120),
+		GroupCooldown:      getDuration("TELEGRAM_GROUP_COOLDOWN", time.Hour),
+		GroupDaily:         getInt("TELEGRAM_GROUP_DAILY", 3),
+		DuplicateWindow:    getDuration("TELEGRAM_DUPLICATE_WINDOW", 24*time.Hour),
+		GlobalPerSecond:    getInt("TELEGRAM_GLOBAL_PER_SECOND", 10),
+		MaxAttempts:        getInt("TELEGRAM_MAX_ATTEMPTS", 5),
+		LeaseTTL:           getDuration("TELEGRAM_LEASE_TTL", 2*time.Minute),
+	}
+	cfg.AI = AIConfig{
+		Provider:  getString("AI_PROVIDER", AIProviderNone),
+		BaseURL:   getString("AI_BASE_URL", ""),
+		APIKey:    getString("AI_API_KEY", ""),
+		Model:     getString("AI_MODEL", ""),
+		Timeout:   getDuration("AI_TIMEOUT", 20*time.Second),
+		CacheTTL:  getDuration("AI_CACHE_TTL", 24*time.Hour),
+		HermesURL: getString("HERMES_BASE_URL", ""),
+		HermesKey: getString("HERMES_API_KEY", ""),
+	}
+
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -310,6 +431,54 @@ func (c *Config) Validate() error {
 	}
 	if c.Payment.CommissionPercent < 0 || c.Payment.CommissionPercent > 100 {
 		problems = append(problems, "PLATFORM_COMMISSION_PERCENT must be between 0 and 100")
+	}
+
+	// Posting is optional, but a half-configured client would fail at the first
+	// send rather than at boot, so partial configuration is refused outright.
+	set := 0
+	for _, v := range []string{fmt.Sprint(c.Telegram.APIID), c.Telegram.APIHash, c.Telegram.SessionKEK} {
+		if v != "" && v != "0" {
+			set++
+		}
+	}
+	switch set {
+	case 0: // posting disabled
+	case 3:
+		if _, _, err := c.Telegram.KEKs(); err != nil {
+			problems = append(problems, err.Error())
+		}
+		if c.Telegram.KEKVersion < 1 {
+			problems = append(problems, "TELEGRAM_SESSION_KEK_VERSION must be at least 1")
+		}
+		if c.Telegram.PreviousKEK != "" && c.Telegram.PreviousKEKVersion >= c.Telegram.KEKVersion {
+			problems = append(problems, "TELEGRAM_SESSION_KEK_PREVIOUS_VERSION must be lower than the current version")
+		}
+		if c.Telegram.AccountGap <= 0 || c.Telegram.AccountHourly < 1 || c.Telegram.AccountDaily < 1 {
+			problems = append(problems, "Telegram account limits must all be positive")
+		}
+		if c.Telegram.GroupCooldown <= 0 || c.Telegram.GroupDaily < 1 {
+			problems = append(problems, "Telegram group limits must all be positive")
+		}
+		if c.Telegram.GlobalPerSecond < 1 {
+			problems = append(problems, "TELEGRAM_GLOBAL_PER_SECOND must be at least 1")
+		}
+		if c.Telegram.MaxAttempts < 1 {
+			problems = append(problems, "TELEGRAM_MAX_ATTEMPTS must be at least 1")
+		}
+	default:
+		problems = append(problems, "TELEGRAM_API_ID, TELEGRAM_API_HASH and TELEGRAM_SESSION_KEK must be set together")
+	}
+
+	switch c.AI.Provider {
+	case AIProviderNone, AIProviderLLM, AIProviderHermes:
+	default:
+		problems = append(problems, "AI_PROVIDER must be none, llm or hermes")
+	}
+	if c.AI.Provider == AIProviderLLM && c.AI.APIKey == "" {
+		problems = append(problems, "AI_API_KEY is required when AI_PROVIDER is llm")
+	}
+	if c.AI.Provider == AIProviderHermes && (c.AI.HermesURL == "" || c.AI.HermesKey == "") {
+		problems = append(problems, "HERMES_BASE_URL and HERMES_API_KEY are required when AI_PROVIDER is hermes")
 	}
 
 	if c.App.IsProduction() {

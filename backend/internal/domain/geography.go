@@ -98,6 +98,10 @@ func LocalisedName(uz, ru, en string, locale Locale) string {
 // GeoRepository serves the address book and reference geography.
 type GeoRepository interface {
 	ListCountries(ctx context.Context) ([]Country, error)
+	// ListPlaces returns every city and region as a resolvable name, with the
+	// country it belongs to. The advert parser needs one flat list rather than a
+	// query per region: it runs on every keystroke-triggered parse.
+	ListPlaces(ctx context.Context) ([]Place, error)
 	ListRegions(ctx context.Context, countryCode string) ([]Region, error)
 	ListCities(ctx context.Context, regionID *uuid.UUID, search string, limit int) ([]City, error)
 	FindRegionByID(ctx context.Context, id uuid.UUID) (*Region, error)

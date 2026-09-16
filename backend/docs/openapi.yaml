@@ -600,6 +600,169 @@ paths:
         "200": { $ref: "#/components/responses/OK" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /load-ads/parse:
+    post:
+      tags: [Load adverts]
+      summary: Read a freight advert written in plain language
+      description: |
+        Turns an advert as someone would post it — "Ташкент → Москва, 20 тонн,
+        тент, загрузка завтра, 2500$" — into a draft. It stores nothing.
+
+        Every field comes back with the rule that produced it and the words it
+        was read from, so the client can show removable chips and a person can
+        see a misread before a hundred groups do. What nobody could resolve is
+        listed in "dropped" rather than swallowed, and what the advert still
+        needs before it can be posted is listed in "missing".
+
+        Nothing is guessed. A tonnage that was not stated stays null; a figure
+        with no currency beside it is reported as unresolved rather than
+        assumed, because on these corridors the same number could be dollars,
+        so'm or roubles.
+
+        Rules first: cities and regions across the region, Uzbek case endings
+        that state the direction, Russian and English prepositions, both
+        scripts. Relative days are resolved on the server against the company
+        timezone.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text:
+                  type: string
+                  minLength: 3
+                  maxLength: 4000
+                  example: "Ташкент → Москва\n20 тонн\nтент\nзагрузка завтра\n2500$"
+      responses:
+        "200":
+          description: What was understood
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ParsedAdvert" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /load-ads:
+    get:
+      tags: [Load adverts]
+      summary: List the company adverts
+      security:
+        - bearerAuth: []
+      parameters:
+        - { in: query, name: status, schema: { type: string, enum: [draft, ready, publishing, published, archived] } }
+        - { in: query, name: mine, schema: { type: boolean }, description: Only adverts the caller created }
+        - { in: query, name: search, schema: { type: string, maxLength: 120 } }
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PerPage" }
+      responses:
+        "200":
+          description: A page of adverts
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/LoadAd" }
+    post:
+      tags: [Load adverts]
+      summary: Store an advert a person confirmed
+      description: |
+        Almost every field is optional, because an advert that omits the volume
+        or the cargo type is normal and requiring a value would only invite an
+        invented one. What is required is what a group needs to act on the post:
+        where from, where to, and someone to call. An advert missing any of them
+        is stored as a draft rather than refused.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SaveLoadAd" }
+      responses:
+        "201":
+          description: The stored advert
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/LoadAd" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /load-ads/{id}:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Load adverts]
+      summary: Read one advert
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The advert
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/LoadAd" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Load adverts]
+      summary: Edit an advert
+      description: |
+        An advert that has already been posted stays published: editing it
+        changes what the next run sends, never what the groups already received.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SaveLoadAd" }
+      responses:
+        "200":
+          description: The updated advert
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/LoadAd" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [Load adverts]
+      summary: Archive an advert
+      description: |
+        The row stays. Posts that went out still point at it, and a history
+        entry whose advert vanished explains nothing.
+      security:
+        - bearerAuth: []
+      responses:
+        "204": { description: Archived }
+        "404": { $ref: "#/components/responses/NotFound" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -672,6 +835,118 @@ components:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
 
   schemas:
+    PlaceRef:
+      type: object
+      description: One end of a corridor - what was resolved, and the words the person wrote.
+      properties:
+        city_id: { type: string, format: uuid, nullable: true }
+        region_id: { type: string, format: uuid, nullable: true }
+        country: { type: string, minLength: 2, maxLength: 2, nullable: true, example: RU }
+        text: { type: string, example: Москва }
+
+    ParsedField:
+      type: object
+      description: |
+        One value the parser resolved, with the words it was read from. The
+        client renders this as a removable chip; removing it drops exactly the
+        field it names.
+      properties:
+        value: { nullable: true }
+        source:
+          type: string
+          enum: [rule, ai, user]
+          description: Which rule or model produced the value.
+        evidence:
+          type: string
+          description: The words in the advert this value was read from.
+          example: 20 тонн
+
+    ParsedAdvert:
+      type: object
+      properties:
+        fields:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/ParsedField" }
+          description: |
+            Keyed by field name - origin, destination, cargo_type, weight_kg,
+            volume_m3, vehicle_type, loading_date, price, payment_terms,
+            contact_phone. A field nobody resolved is present with a null value
+            rather than absent.
+        missing:
+          type: array
+          items: { type: string }
+          description: What the advert still needs before it can be posted.
+          example: [contact_phone]
+        dropped:
+          type: array
+          items: { type: string }
+          description: Words nothing understood, surfaced rather than swallowed.
+        ai_used:
+          type: boolean
+          description: Whether a model was called at all. False when the rules resolved everything.
+        draft:
+          allOf:
+            - $ref: "#/components/schemas/SaveLoadAd"
+          description: The same content in the shape the create endpoint accepts.
+
+    SaveLoadAd:
+      type: object
+      properties:
+        raw_text: { type: string, maxLength: 4000 }
+        origin_city_id: { type: string, format: uuid, nullable: true }
+        origin_region_id: { type: string, format: uuid, nullable: true }
+        origin_country: { type: string, minLength: 2, maxLength: 2, nullable: true }
+        origin_text: { type: string, maxLength: 120 }
+        destination_city_id: { type: string, format: uuid, nullable: true }
+        destination_region_id: { type: string, format: uuid, nullable: true }
+        destination_country: { type: string, minLength: 2, maxLength: 2, nullable: true }
+        destination_text: { type: string, maxLength: 120 }
+        cargo_type_id: { type: string, format: uuid, nullable: true }
+        cargo_text: { type: string, maxLength: 120, nullable: true }
+        weight_kg: { type: integer, minimum: 1, maximum: 100000, nullable: true }
+        volume_m3: { type: number, format: double, maximum: 200, nullable: true }
+        vehicle_type: { $ref: "#/components/schemas/VehicleType" }
+        loading_date: { type: string, format: date, nullable: true, example: "2026-09-16" }
+        loading_date_text: { type: string, maxLength: 64, nullable: true, example: завтра }
+        price_amount: { type: integer, format: int64, nullable: true, description: Minor units }
+        price_currency: { type: string, minLength: 3, maxLength: 3, nullable: true, example: USD }
+        price_negotiable: { type: boolean }
+        payment_terms: { type: string, enum: [on_loading, on_delivery, prepayment, deferred], nullable: true }
+        payment_method: { type: string, enum: [cash, transfer, card, escrow], nullable: true }
+        contact_phone: { type: string, nullable: true, example: "+998901234567" }
+        contact_name: { type: string, maxLength: 120, nullable: true }
+        notes: { type: string, maxLength: 2000, nullable: true }
+
+    LoadAd:
+      allOf:
+        - $ref: "#/components/schemas/SaveLoadAd"
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            company_id: { type: string, format: uuid }
+            status:
+              type: string
+              enum: [draft, ready, publishing, published, archived]
+              description: |
+                Derived from the content rather than set by the client: an
+                advert carrying an origin, a destination and a phone number is
+                ready, anything less is a draft.
+            origin: { $ref: "#/components/schemas/PlaceRef" }
+            destination: { $ref: "#/components/schemas/PlaceRef" }
+            missing:
+              type: array
+              items: { type: string }
+              description: Recomputed on read, never stored stale.
+            fingerprint:
+              type: string
+              description: |
+                Digest of what the advert means rather than how it was written,
+                so the same offer retyped is recognised as a repeat by the
+                duplicate check.
+            published_at: { type: string, format: date-time, nullable: true }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+
     Envelope:
       type: object
       properties:

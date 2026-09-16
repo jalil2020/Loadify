@@ -345,16 +345,28 @@ func (e *AdDateExtractor) resolve(day int, month time.Month, year int) time.Time
 	if year == 0 {
 		year = today.Year()
 	}
-	date := time.Date(year, month, day, 0, 0, 0, 0, e.loc)
+	date := calendarDay(time.Date(year, month, day, 0, 0, 0, 0, e.loc))
 	if date.Before(today.AddDate(0, 0, -7)) {
 		date = date.AddDate(1, 0, 0)
 	}
 	return date
 }
 
+// startOfToday is today where the person is, not where the server is.
 func (e *AdDateExtractor) startOfToday() time.Time {
-	now := e.now().In(e.loc)
-	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, e.loc)
+	return calendarDay(e.now().In(e.loc))
+}
+
+// calendarDay strips a moment down to the day it falls on, anchored at UTC
+// midnight.
+//
+// The column is a DATE, and Postgres casts what we send using the session
+// timezone: midnight in Tashkent is the previous evening in UTC, which would
+// store the day before the one the person meant. Carrying the day itself rather
+// than a moment inside it removes the question.
+func calendarDay(t time.Time) time.Time {
+	year, month, day := t.Date()
+	return time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
 }
 
 func monthFromWord(folded string) (time.Month, bool) {

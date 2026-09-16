@@ -71,6 +71,7 @@ type Repositories struct {
 	Companies     domain.CompanyRepository
 	CompanyDocs   domain.CompanyDocumentRepository
 	Loads         domain.LoadRepository
+	LoadAds       domain.LoadAdRepository
 	CargoTypes    domain.CargoTypeRepository
 	Saved         domain.SavedRepository
 	Bookings      domain.BookingRepository
@@ -96,6 +97,7 @@ type Usecases struct {
 	Reference    *usecase.ReferenceUsecase
 	Search       *usecase.SearchUsecase
 	Load         *usecase.LoadUsecase
+	LoadAd       *usecase.LoadAdUsecase
 	Booking      *usecase.BookingUsecase
 	Trip         *usecase.TripUsecase
 	Chat         *usecase.ChatUsecase
@@ -115,6 +117,7 @@ type Handlers struct {
 	Reference    *handler.ReferenceHandler
 	Search       *handler.SearchHandler
 	Load         *handler.LoadHandler
+	LoadAd       *handler.LoadAdHandler
 	Booking      *handler.BookingHandler
 	Trip         *handler.TripHandler
 	Chat         *handler.ChatHandler
@@ -183,6 +186,7 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 		Companies:     repository.NewCompanyRepository(db.DB),
 		CompanyDocs:   repository.NewCompanyDocumentRepository(db.DB),
 		Loads:         repository.NewLoadRepository(db.DB),
+		LoadAds:       repository.NewLoadAdRepository(db.DB),
 		CargoTypes:    repository.NewCargoTypeRepository(db.DB),
 		Saved:         repository.NewSavedRepository(db.DB),
 		Bookings:      repository.NewBookingRepository(db.DB),
@@ -236,6 +240,11 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 	)
 	referenceUsecase := usecase.NewReferenceUsecase(repos.Geo, redisCache, log)
 	searchUsecase := usecase.NewSearchUsecase(referenceUsecase, log)
+
+	// The advert parser reads the same reference data as the marketplace search,
+	// through its own wider vocabulary: these corridors cross borders.
+	adParser := usecase.NewAdParser(repos.Geo, repos.CargoTypes, referenceUsecase, redisCache, cfg.App.Timezone, log)
+	loadAdUsecase := usecase.NewLoadAdUsecase(repos.LoadAds, adParser, repos.Audit, log)
 
 	loadUsecase := usecase.NewLoadUsecase(
 		repos.Loads, repos.CargoTypes, repos.Saved, repos.Bookings, repos.Companies,
@@ -306,6 +315,7 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 			Reference:    referenceUsecase,
 			Search:       searchUsecase,
 			Load:         loadUsecase,
+			LoadAd:       loadAdUsecase,
 			Booking:      bookingUsecase,
 			Trip:         tripUsecase,
 			Chat:         chatUsecase,
@@ -323,6 +333,7 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 			Reference:    handler.NewReferenceHandler(referenceUsecase),
 			Search:       handler.NewSearchHandler(searchUsecase, v),
 			Load:         handler.NewLoadHandler(loadUsecase, v),
+			LoadAd:       handler.NewLoadAdHandler(loadAdUsecase, v),
 			Booking:      handler.NewBookingHandler(bookingUsecase, v),
 			Trip:         handler.NewTripHandler(tripUsecase, v),
 			Chat:         handler.NewChatHandler(chatUsecase, v),

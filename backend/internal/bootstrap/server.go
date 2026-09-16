@@ -53,6 +53,7 @@ func NewFiberApp(c *Container) *fiber.App {
 		Reference:    c.Handlers.Reference,
 		Search:       c.Handlers.Search,
 		Load:         c.Handlers.Load,
+		LoadAd:       c.Handlers.LoadAd,
 		Booking:      c.Handlers.Booking,
 		Trip:         c.Handlers.Trip,
 		Chat:         c.Handlers.Chat,

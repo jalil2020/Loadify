@@ -26,6 +26,7 @@ type Handlers struct {
 	Reference    *handler.ReferenceHandler
 	Search       *handler.SearchHandler
 	Load         *handler.LoadHandler
+	LoadAd       *handler.LoadAdHandler
 	Booking      *handler.BookingHandler
 	Trip         *handler.TripHandler
 	Chat         *handler.ChatHandler
@@ -59,6 +60,7 @@ func Register(app *fiber.App, h Handlers, d Deps) {
 	registerDriverRoutes(v1, h, d)
 	registerCompanyRoutes(v1, h, d)
 	registerLoadRoutes(v1, h, d)
+	registerLoadAdRoutes(v1, h, d)
 	registerBookingRoutes(v1, h, d)
 	registerTripRoutes(v1, h, d)
 	registerChatRoutes(v1, h, d)
@@ -387,4 +389,27 @@ func registerAdminRoutes(v1 fiber.Router, h Handlers, d Deps) {
 	admin.Put("/settings/:key", d.Auth.RequirePermission("admin.settings"), h.Admin.UpdateSetting)
 	admin.Get("/feature-flags", d.Auth.RequirePermission("admin.settings"), h.Admin.ListFeatureFlags)
 	admin.Put("/feature-flags/:key", d.Auth.RequirePermission("admin.settings"), h.Admin.SetFeatureFlag)
+}
+
+// registerLoadAdRoutes mounts /api/v1/load-ads — the adverts a forwarder
+// distributes to Telegram groups.
+//
+// They are separate from /loads on purpose. A marketplace load is a shipment
+// with an address, a price and a lifecycle; an advert is what someone writes in
+// a group, where half of that is routinely left out. Sharing a path would mean
+// sharing a shape, and the shape is the difference.
+func registerLoadAdRoutes(v1 fiber.Router, h Handlers, d Deps) {
+	ads := v1.Group("/load-ads", d.Auth.Authenticate(), d.Auth.RequireCompany())
+
+	// Parsing is free of side effects but not free of cost, so it gets its own
+	// limit: it runs while someone types.
+	ads.Post("/parse",
+		middleware.RateLimit(d.Cache, d.Log, "ad-parse", 60, time.Minute),
+		d.Auth.RequirePermission("load_ads.create"), h.LoadAd.Parse)
+
+	ads.Get("/", d.Auth.RequirePermission("load_ads.view"), h.LoadAd.List)
+	ads.Post("/", d.Auth.RequirePermission("load_ads.create"), h.LoadAd.Create)
+	ads.Get("/:id", d.Auth.RequirePermission("load_ads.view"), h.LoadAd.Get)
+	ads.Put("/:id", d.Auth.RequirePermission("load_ads.create"), h.LoadAd.Update)
+	ads.Delete("/:id", d.Auth.RequirePermission("load_ads.delete"), h.LoadAd.Archive)
 }

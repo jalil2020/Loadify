@@ -197,6 +197,11 @@ type TelegramConfig struct {
 	GlobalPerSecond int           // across every account: protects the shared api_id
 	MaxAttempts     int
 	LeaseTTL        time.Duration
+	// TrustRandomID says whether Telegram has been shown to refuse a message
+	// whose random_id it has already seen. Until the spike confirms it, a job
+	// whose worker stopped mid-send is failed as "outcome unknown" instead of
+	// being sent again: a missed post is recoverable, a duplicate is spam.
+	TrustRandomID bool
 }
 
 // Enabled reports whether posting can run at all.
@@ -378,6 +383,7 @@ func Load(envFiles ...string) (*Config, error) {
 		GlobalPerSecond:    getInt("TELEGRAM_GLOBAL_PER_SECOND", 10),
 		MaxAttempts:        getInt("TELEGRAM_MAX_ATTEMPTS", 5),
 		LeaseTTL:           getDuration("TELEGRAM_LEASE_TTL", 2*time.Minute),
+		TrustRandomID:      getBool("TELEGRAM_TRUST_RANDOM_ID", false),
 	}
 	cfg.AI = AIConfig{
 		Provider:  getString("AI_PROVIDER", AIProviderNone),

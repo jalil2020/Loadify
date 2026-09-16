@@ -6,7 +6,6 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 
 	"github.com/loadify/backend/internal/domain"
 	"github.com/loadify/backend/pkg/apperror"
@@ -170,30 +169,47 @@ func (r *postingRepository) DueJobs(ctx context.Context, limit int) ([]domain.Po
 // entry both run this, and exactly one updates a row. A job whose lease has
 // expired is claimable again, because the worker that held it is gone.
 func (r *postingRepository) Claim(ctx context.Context, id uuid.UUID, owner string, lease time.Duration) (*domain.PostingJob, error) {
-	var job domain.PostingJob
+	var jobs []domain.PostingJob
 
-	res := r.DB(ctx).Model(&job).
-		Clauses(clause.Returning{}).
-		Where("id = ?", id).
-		Where("(status IN ? AND next_attempt_at <= now()) OR (status = ? AND lease_until < now())",
-			[]domain.PostingJobStatus{domain.PostingPending, domain.PostingRateLimited},
-			domain.PostingProcessing).
-		Updates(map[string]any{
-			"status":      domain.PostingProcessing,
-			"attempt":     gorm.Expr("attempt + 1"),
-			"lease_owner": owner,
-			"lease_until": time.Now().Add(lease),
-		})
-	if res.Error != nil {
-		return nil, translate(res.Error, "posting job")
+	err := r.DB(ctx).Raw(claimSQL, map[string]any{
+		"id":    id,
+		"owner": owner,
+		"until": time.Now().Add(lease),
+	}).Scan(&jobs).Error
+	if err != nil {
+		return nil, translate(err, "posting job")
 	}
-	if res.RowsAffected == 0 {
+	if len(jobs) == 0 {
 		// Someone else has it, or it is already finished. Not an error: the
 		// worker acknowledges the queue entry and moves on.
 		return nil, nil
 	}
-	return &job, nil
+	return &jobs[0], nil
 }
+
+// claimSQL reports what the job was before it was claimed, alongside the row.
+//
+// Postgres cannot return an old value from an UPDATE directly, so the row is
+// read and locked first. The previous status is the one fact the worker cannot
+// reconstruct afterwards: "processing" means another worker died mid-send, and
+// whether sending again is safe depends on it.
+const claimSQL = `
+WITH previous AS (
+    SELECT id, status FROM posting_jobs WHERE id = @id FOR UPDATE
+)
+UPDATE posting_jobs j
+SET status      = 'processing',
+    attempt     = j.attempt + 1,
+    lease_owner = @owner,
+    lease_until = @until,
+    updated_at  = now()
+FROM previous p
+WHERE j.id = p.id
+  AND (
+    (j.status IN ('pending', 'rate_limited') AND j.next_attempt_at <= now())
+    OR (j.status = 'processing' AND j.lease_until < now())
+  )
+RETURNING j.*, p.status AS previous_status`
 
 // Finish records how a job ended, and appends the transition to its history.
 func (r *postingRepository) Finish(ctx context.Context, id uuid.UUID, outcome domain.JobOutcome) error {

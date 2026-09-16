@@ -93,6 +93,12 @@ type PostingJob struct {
 	SentAt        *time.Time
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+
+	// PreviousStatus is what the job was before the claim that returned it. It
+	// is read-only and only the claim fills it: a job claimed out of
+	// "processing" is one whose worker stopped mid-send, and whether it may be
+	// sent again depends on whether Telegram can be trusted to refuse a copy.
+	PreviousStatus PostingJobStatus `gorm:"->;column:previous_status"`
 }
 
 // TableName pins the job table.

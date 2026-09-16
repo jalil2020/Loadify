@@ -240,10 +240,10 @@ type PostingRepository interface {
 	FindJob(ctx context.Context, companyID, id uuid.UUID) (*PostingJob, error)
 	ListJobs(ctx context.Context, companyID uuid.UUID, filter PostingJobFilter, offset, limit int) ([]PostingJob, int64, error)
 
-	// DueJobs returns jobs whose time has come and whose lease is free. The
-	// relay hands them to the queue; the claim is what actually reserves one.
+	// DueJobs returns jobs whose time has come and marks them as handed to the
+	// queue, in one transaction with SKIP LOCKED, so two relays reading at once
+	// never enqueue the same job twice. The claim is still what reserves it.
 	DueJobs(ctx context.Context, limit int) ([]PostingJob, error)
-	MarkEnqueued(ctx context.Context, ids []uuid.UUID, at time.Time) error
 	// Claim moves one job to processing, but only if it is still claimable, so
 	// two workers reading the same queue entry cannot both send.
 	Claim(ctx context.Context, id uuid.UUID, owner string, lease time.Duration) (*PostingJob, error)

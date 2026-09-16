@@ -73,6 +73,9 @@ type Repositories struct {
 	CompanyDocs   domain.CompanyDocumentRepository
 	Loads         domain.LoadRepository
 	LoadAds       domain.LoadAdRepository
+	TgAccounts    domain.TelegramAccountRepository
+	TgGroups      domain.TelegramGroupRepository
+	Posting       domain.PostingRepository
 	CargoTypes    domain.CargoTypeRepository
 	Saved         domain.SavedRepository
 	Bookings      domain.BookingRepository
@@ -188,6 +191,9 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 		CompanyDocs:   repository.NewCompanyDocumentRepository(db.DB),
 		Loads:         repository.NewLoadRepository(db.DB),
 		LoadAds:       repository.NewLoadAdRepository(db.DB),
+		TgAccounts:    repository.NewTelegramAccountRepository(db.DB),
+		TgGroups:      repository.NewTelegramGroupRepository(db.DB),
+		Posting:       repository.NewPostingRepository(db.DB),
 		CargoTypes:    repository.NewCargoTypeRepository(db.DB),
 		Saved:         repository.NewSavedRepository(db.DB),
 		Bookings:      repository.NewBookingRepository(db.DB),

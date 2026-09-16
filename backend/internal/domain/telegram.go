@@ -390,11 +390,12 @@ type GroupCandidateQuery struct {
 	WeightKg       *int
 }
 
-// GroupCandidate is a group that survived the SQL filter, with the rules the
-// scorer needs.
+// GroupCandidate is a group that survived the SQL filter, with everything the
+// scorer needs to rank it.
 type GroupCandidate struct {
-	Group TelegramGroup
-	Rules TelegramGroupRules
+	Group  TelegramGroup
+	Rules  TelegramGroupRules
+	Routes []TelegramGroupRoute
 }
 
 // TelegramGroupRepository persists groups and their rules.

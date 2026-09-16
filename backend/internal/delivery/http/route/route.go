@@ -27,6 +27,7 @@ type Handlers struct {
 	Search       *handler.SearchHandler
 	Load         *handler.LoadHandler
 	LoadAd       *handler.LoadAdHandler
+	Publish      *handler.PublishHandler
 	Booking      *handler.BookingHandler
 	Trip         *handler.TripHandler
 	Chat         *handler.ChatHandler
@@ -412,4 +413,16 @@ func registerLoadAdRoutes(v1 fiber.Router, h Handlers, d Deps) {
 	ads.Get("/:id", d.Auth.RequirePermission("load_ads.view"), h.LoadAd.Get)
 	ads.Put("/:id", d.Auth.RequirePermission("load_ads.create"), h.LoadAd.Update)
 	ads.Delete("/:id", d.Auth.RequirePermission("load_ads.delete"), h.LoadAd.Archive)
+
+	// Reviewing costs nothing and sends nothing; publishing is the only step
+	// that reaches Telegram, and it carries the reviewed list with it.
+	ads.Post("/:id/publish/preview", d.Auth.RequirePermission("load_ads.publish"), h.Publish.Preview)
+	ads.Post("/:id/publish", d.Auth.RequirePermission("load_ads.publish"), h.Publish.Publish)
+	ads.Get("/:id/posts", d.Auth.RequirePermission("posting.view"), h.Publish.Jobs)
+
+	history := v1.Group("/posting-history", d.Auth.Authenticate(), d.Auth.RequireCompany())
+	history.Get("/", d.Auth.RequirePermission("posting.view"), h.Publish.History)
+
+	jobs := v1.Group("/posting-jobs", d.Auth.Authenticate(), d.Auth.RequireCompany())
+	jobs.Post("/:id/cancel", d.Auth.RequirePermission("load_ads.publish"), h.Publish.Cancel)
 }

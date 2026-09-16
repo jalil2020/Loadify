@@ -763,6 +763,158 @@ paths:
         "204": { description: Archived }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /load-ads/{id}/publish/preview:
+    post:
+      tags: [Distribution]
+      summary: Work out where an advert would go
+      description: |
+        Runs the whole funnel and explains it: how many groups matched, which
+        are approved, and for every one held back, why - a cooldown, a daily
+        limit, a duplicate, quiet hours, a corridor that does not match.
+
+        It sends nothing and consumes no allowance, so a person can look twice.
+        The reply carries a preview_token that ties a publish to the list that
+        was actually reviewed; it is valid for ten minutes and single use.
+      security:
+        - bearerAuth: []
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+        - in: query
+          name: account_id
+          schema: { type: string, format: uuid }
+          description: Which connected account to post from. Only your own accounts are accepted.
+      responses:
+        "200":
+          description: What would be sent, and what would not
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/PublishPreview" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /load-ads/{id}/publish:
+    post:
+      tags: [Distribution]
+      summary: Queue the advert for the reviewed groups
+      description: |
+        Queues one message per group. Nothing is sent by this request: the jobs
+        are written down and the worker sends them within the limits, which is
+        what makes the decision auditable and the sending restartable.
+
+        An Idempotency-Key header is required. A retried request returns the run
+        that already exists rather than posting the advert a second time.
+
+        group_ids narrows the reviewed list and never extends it: a group that
+        was not in the preview cannot be posted to by naming it here. If the
+        advert changed after the review, the request is refused, because the
+        list no longer describes what would be sent.
+      security:
+        - bearerAuth: []
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [preview_token]
+              properties:
+                preview_token: { type: string }
+                group_ids:
+                  type: array
+                  maxItems: 200
+                  items: { type: string, format: uuid }
+      responses:
+        "202":
+          description: Queued
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/PublishResult" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /load-ads/{id}/posts:
+    get:
+      tags: [Distribution]
+      summary: What happened to one advert, group by group
+      security:
+        - bearerAuth: []
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: One line per group
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/PostingJob" }
+
+  /posting-history:
+    get:
+      tags: [Distribution]
+      summary: Everything that went out, newest first
+      security:
+        - bearerAuth: []
+      parameters:
+        - { in: query, name: status, schema: { type: string, enum: [pending, processing, sent, failed, skipped, rate_limited, cancelled] } }
+        - { in: query, name: group_id, schema: { type: string, format: uuid } }
+        - { in: query, name: load_ad_id, schema: { type: string, format: uuid } }
+        - { in: query, name: mine, schema: { type: boolean } }
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PerPage" }
+      responses:
+        "200":
+          description: A page of posts
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/PostingJob" }
+
+  /posting-jobs/{id}/cancel:
+    post:
+      tags: [Distribution]
+      summary: Stop a post that has not gone out yet
+      description: |
+        Only a queued or waiting post can be stopped. One already sent is
+        refused rather than silently ignored, because the difference matters to
+        whoever is asking.
+      security:
+        - bearerAuth: []
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Cancelled }
+        "409": { $ref: "#/components/responses/Conflict" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -835,6 +987,81 @@ components:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
 
   schemas:
+    GroupDecision:
+      type: object
+      description: |
+        One group and what the platform decided about it. Approved and held-back
+        groups share a shape because the interface shows them together: the
+        point of a preview is that a person sees the whole reasoning.
+      properties:
+        group_id: { type: string, format: uuid }
+        title: { type: string }
+        score:
+          type: integer
+          description: Why it ranked where it did, in points.
+        reasons:
+          type: array
+          items: { type: string }
+          description: What earned those points - route_region, vehicle_listed, posted_recently.
+        reason:
+          type: string
+          description: Why it was held back - duplicate, cooldown, group_limit, account_limit, quiet_hours, group_unavailable.
+        retry_after_seconds:
+          type: integer
+          description: Present when the answer is "not yet" rather than "no".
+
+    PublishPreview:
+      type: object
+      properties:
+        account_id: { type: string, format: uuid }
+        candidates:
+          type: integer
+          description: How many groups matched before the guard ran.
+        approved:
+          type: array
+          items: { $ref: "#/components/schemas/GroupDecision" }
+        skipped:
+          type: array
+          items: { $ref: "#/components/schemas/GroupDecision" }
+        message_preview:
+          type: string
+          description: Exactly what a group will receive.
+        preview_token:
+          type: string
+          description: Ties a publish to the list that was reviewed. Single use, ten minutes.
+        expires_at: { type: string, format: date-time }
+
+    PublishResult:
+      type: object
+      properties:
+        run_id: { type: string, format: uuid }
+        load_ad_id: { type: string, format: uuid }
+        account_id: { type: string, format: uuid }
+        queued: { type: integer }
+        skipped: { type: integer }
+        jobs:
+          type: array
+          items: { $ref: "#/components/schemas/PostingJob" }
+
+    PostingJob:
+      type: object
+      description: One message on its way to one group.
+      properties:
+        id: { type: string, format: uuid }
+        group_id: { type: string, format: uuid }
+        group_title: { type: string }
+        status:
+          type: string
+          enum: [pending, processing, sent, failed, skipped, rate_limited, cancelled]
+        skip_reason: { type: string }
+        attempt: { type: integer }
+        error_code:
+          type: string
+          description: The code Telegram returned when it refused, such as FLOOD_WAIT_X or CHAT_WRITE_FORBIDDEN.
+        next_try_at: { type: string, format: date-time, nullable: true }
+        sent_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+
     PlaceRef:
       type: object
       description: One end of a corridor - what was resolved, and the words the person wrote.

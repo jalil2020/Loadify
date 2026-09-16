@@ -17,6 +17,7 @@ import (
 	"github.com/loadify/backend/internal/infrastructure/database"
 	"github.com/loadify/backend/internal/infrastructure/payment"
 	"github.com/loadify/backend/internal/infrastructure/push"
+	"github.com/loadify/backend/internal/infrastructure/ratelimit"
 	"github.com/loadify/backend/internal/infrastructure/sms"
 	"github.com/loadify/backend/internal/infrastructure/storage"
 	"github.com/loadify/backend/internal/repository"
@@ -102,6 +103,7 @@ type Usecases struct {
 	Search       *usecase.SearchUsecase
 	Load         *usecase.LoadUsecase
 	LoadAd       *usecase.LoadAdUsecase
+	Publish      *usecase.PublishUsecase
 	Booking      *usecase.BookingUsecase
 	Trip         *usecase.TripUsecase
 	Chat         *usecase.ChatUsecase
@@ -122,6 +124,7 @@ type Handlers struct {
 	Search       *handler.SearchHandler
 	Load         *handler.LoadHandler
 	LoadAd       *handler.LoadAdHandler
+	Publish      *handler.PublishHandler
 	Booking      *handler.BookingHandler
 	Trip         *handler.TripHandler
 	Chat         *handler.ChatHandler
@@ -264,6 +267,14 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 	adParser := usecase.NewAdParser(repos.Geo, repos.CargoTypes, referenceUsecase, redisCache, cfg.App.Timezone, adExtractor, log)
 	loadAdUsecase := usecase.NewLoadAdUsecase(repos.LoadAds, adParser, repos.Audit, log)
 
+	// The guard is the only thing standing between an advert and a hundred
+	// groups, so it is constructed once and shared by every path that sends.
+	postingGuard := ratelimit.NewGuard(redisCache.Client(), cfg.Telegram)
+	publishUsecase := usecase.NewPublishUsecase(
+		repos.LoadAds, repos.TgAccounts, repos.TgGroups, repos.CargoTypes,
+		repos.Posting, postingGuard, redisCache, cfg.Telegram, repos.Audit, log,
+	)
+
 	loadUsecase := usecase.NewLoadUsecase(
 		repos.Loads, repos.CargoTypes, repos.Saved, repos.Bookings, repos.Companies,
 		repos.Drivers, repos.Vehicles, repos.Geo, fileUsecase, repos.Tx, repos.Audit,
@@ -334,6 +345,7 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 			Search:       searchUsecase,
 			Load:         loadUsecase,
 			LoadAd:       loadAdUsecase,
+			Publish:      publishUsecase,
 			Booking:      bookingUsecase,
 			Trip:         tripUsecase,
 			Chat:         chatUsecase,
@@ -352,6 +364,7 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 			Search:       handler.NewSearchHandler(searchUsecase, v),
 			Load:         handler.NewLoadHandler(loadUsecase, v),
 			LoadAd:       handler.NewLoadAdHandler(loadAdUsecase, v),
+			Publish:      handler.NewPublishHandler(publishUsecase, v),
 			Booking:      handler.NewBookingHandler(bookingUsecase, v),
 			Trip:         handler.NewTripHandler(tripUsecase, v),
 			Chat:         handler.NewChatHandler(chatUsecase, v),

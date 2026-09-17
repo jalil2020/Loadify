@@ -405,9 +405,16 @@ type TelegramGroupRepository interface {
 	FindByID(ctx context.Context, companyID, id uuid.UUID) (*TelegramGroup, error)
 	ListByAccount(ctx context.Context, companyID, accountID uuid.UUID) ([]TelegramGroup, error)
 	ListByCompany(ctx context.Context, companyID uuid.UUID) ([]TelegramGroup, error)
+	// ListWithRules is the management view: every group with its rules and
+	// corridors, read in three queries rather than two per group.
+	ListWithRules(ctx context.Context, companyID uuid.UUID) ([]GroupCandidate, error)
 	Candidates(ctx context.Context, companyID uuid.UUID, query GroupCandidateQuery) ([]GroupCandidate, error)
 	SaveRules(ctx context.Context, rules *TelegramGroupRules, routes []TelegramGroupRoute) error
 	Rules(ctx context.Context, companyID, groupID uuid.UUID) (*TelegramGroupRules, []TelegramGroupRoute, error)
+	// UpdateSettings changes what the person controls on the group itself, as
+	// opposed to its rules: the language posts are written in, and whether it
+	// receives posts at all.
+	UpdateSettings(ctx context.Context, companyID, id uuid.UUID, language *string, postingEnabled *bool) error
 	Deactivate(ctx context.Context, companyID, id uuid.UUID, reason string) error
 	DisablePosting(ctx context.Context, companyID, id uuid.UUID, reason string) error
 	MarkPosted(ctx context.Context, id uuid.UUID, at time.Time) error

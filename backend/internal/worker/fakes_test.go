@@ -228,3 +228,11 @@ type vaultStub struct{}
 
 func (vaultStub) Seal([]byte, string) ([]byte, int, error) { return nil, 1, nil }
 func (vaultStub) Open([]byte, int, string) ([]byte, error) { return []byte("opened session"), nil }
+
+func (g *groupStore) UpdateSettings(context.Context, uuid.UUID, uuid.UUID, *string, *bool) error {
+	return nil
+}
+
+func (g *groupStore) ListWithRules(context.Context, uuid.UUID) ([]domain.GroupCandidate, error) {
+	return nil, nil
+}

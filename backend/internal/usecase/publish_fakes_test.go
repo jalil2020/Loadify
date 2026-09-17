@@ -244,3 +244,11 @@ func (f *fakeGuard) AccountPausedUntil(context.Context, uuid.UUID) (time.Time, b
 type noopAudit struct{}
 
 func (noopAudit) Record(context.Context, domain.AuditEntry) error { return nil }
+
+func (f *fakeGroupRepo) UpdateSettings(context.Context, uuid.UUID, uuid.UUID, *string, *bool) error {
+	return nil
+}
+
+func (f *fakeGroupRepo) ListWithRules(context.Context, uuid.UUID) ([]domain.GroupCandidate, error) {
+	return f.candidates, nil
+}

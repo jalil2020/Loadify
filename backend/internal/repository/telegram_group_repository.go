@@ -21,9 +21,14 @@ func NewTelegramGroupRepository(db *gorm.DB) domain.TelegramGroupRepository {
 
 // Upsert stores a group the person picked out of their own dialogs, or
 // refreshes what Telegram now says about one already stored.
+//
+// The conflict target repeats the unique index's predicate: the index only
+// covers rows that are not deleted, and Postgres will not match ON CONFLICT to
+// a partial index unless the statement names the same condition.
 func (r *telegramGroupRepository) Upsert(ctx context.Context, group *domain.TelegramGroup) error {
 	err := r.DB(ctx).Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "account_id"}, {Name: "tg_peer_id"}},
+		Columns:     []clause.Column{{Name: "account_id"}, {Name: "tg_peer_id"}},
+		TargetWhere: clause.Where{Exprs: []clause.Expression{clause.Expr{SQL: "deleted_at IS NULL"}}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"title", "username", "kind", "member_count", "slowmode_seconds",
 			"can_send", "access_hash", "last_synced_at", "updated_at",
@@ -295,4 +300,55 @@ func (r *telegramGroupRepository) CountActive(ctx context.Context, companyID uui
 		return 0, translate(err, "telegram group")
 	}
 	return total, nil
+}
+
+// UpdateSettings changes the language and the on/off switch. Re-enabling
+// posting clears the reason it was switched off, but never re-enables a group
+// Telegram itself refused: can_send stays as the last sync left it.
+func (r *telegramGroupRepository) UpdateSettings(
+	ctx context.Context,
+	companyID, id uuid.UUID,
+	language *string,
+	postingEnabled *bool,
+) error {
+	columns := map[string]any{}
+	if language != nil {
+		columns["language"] = *language
+	}
+	if postingEnabled != nil {
+		columns["posting_enabled"] = *postingEnabled
+		if *postingEnabled {
+			columns["inactive_reason"] = nil
+		}
+	}
+	if len(columns) == 0 {
+		return nil
+	}
+	return r.flag(ctx, companyID, id, columns)
+}
+
+func (r *telegramGroupRepository) ListWithRules(ctx context.Context, companyID uuid.UUID) ([]domain.GroupCandidate, error) {
+	groups, err := r.ListByCompany(ctx, companyID)
+	if err != nil || len(groups) == 0 {
+		return nil, err
+	}
+
+	ids := make([]uuid.UUID, 0, len(groups))
+	for _, group := range groups {
+		ids = append(ids, group.ID)
+	}
+	rules, err := r.rulesByGroup(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	routes, err := r.routesByGroup(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]domain.GroupCandidate, 0, len(groups))
+	for _, group := range groups {
+		out = append(out, domain.GroupCandidate{Group: group, Rules: rules[group.ID], Routes: routes[group.ID]})
+	}
+	return out, nil
 }

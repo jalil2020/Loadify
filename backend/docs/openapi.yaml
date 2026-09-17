@@ -915,6 +915,277 @@ paths:
         "204": { description: Cancelled }
         "409": { $ref: "#/components/responses/Conflict" }
 
+  /telegram/accounts:
+    get:
+      tags: [Telegram]
+      summary: List connected accounts
+      description: |
+        The caller's own accounts. A company manager may add company=true to see
+        colleagues' accounts as well - their status, never anything that could be
+        used to post as them. Phone numbers are masked.
+      security:
+        - bearerAuth: []
+      parameters:
+        - { in: query, name: company, schema: { type: boolean } }
+      responses:
+        "200":
+          description: Accounts
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/TelegramAccount" }
+
+  /telegram/accounts/login:
+    post:
+      tags: [Telegram]
+      summary: Start connecting your own Telegram account
+      description: |
+        Telegram sends a code to the Telegram app on that phone. Connecting lets
+        the platform post as this person, and Telegram's terms do not allow acting
+        for someone without their knowledge, so consent_version must match the
+        text the person was shown; the agreement is recorded with it.
+
+        Rate limited tightly: every step reaches Telegram, and Telegram answers
+        repeated attempts by locking the number.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, consent_version]
+              properties:
+                phone: { type: string, example: "+998901234567" }
+                consent_version: { type: string, example: "2026-09" }
+                label: { type: string, maxLength: 64 }
+      responses:
+        "201":
+          description: Code sent
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/TelegramLoginStep" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /telegram/accounts/{id}/code:
+    post:
+      tags: [Telegram]
+      summary: Submit the code Telegram sent
+      description: |
+        Answers with step "password" when the account has two-step verification,
+        or "connected" when signing in is complete. Five wrong codes end the
+        attempt.
+      security:
+        - bearerAuth: []
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, minLength: 3, maxLength: 10 }
+      responses:
+        "200":
+          description: The next step
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/TelegramLoginStep" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /telegram/accounts/{id}/password:
+    post:
+      tags: [Telegram]
+      summary: Submit the two-step verification password
+      description: The password is used once for the exchange Telegram requires and is never stored or logged.
+      security:
+        - bearerAuth: []
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, format: password, maxLength: 256 }
+      responses:
+        "200":
+          description: Connected
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/TelegramLoginStep" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /telegram/accounts/{id}/dialogs:
+    get:
+      tags: [Telegram]
+      summary: Groups this account could post to
+      description: |
+        Only groups and channels the account is already a member of. The platform
+        never joins anything. can_send says whether this account may write there;
+        group_id is set for the ones already connected.
+      security:
+        - bearerAuth: []
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Dialogs
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/TelegramDialog" }
+
+  /telegram/accounts/{id}:
+    delete:
+      tags: [Telegram]
+      summary: Disconnect an account
+      description: |
+        Ends the session on Telegram's side too, so it disappears from the
+        person's list of devices, and cancels everything still queued from it.
+      security:
+        - bearerAuth: []
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Disconnected }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /telegram/groups:
+    get:
+      tags: [Telegram]
+      summary: Connected groups with their rules
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Groups
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/TelegramGroup" }
+    post:
+      tags: [Telegram]
+      summary: Connect a group from the account's own list
+      description: |
+        The group must appear in the account's dialogs and the account must be
+        allowed to write there. A new group gets cautious default rules - one
+        post an hour, a few a day - and its own slow mode is recorded so the
+        cooldown respects it.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [account_id, peer_id]
+              properties:
+                account_id: { type: string, format: uuid }
+                peer_id:
+                  type: string
+                  description: As listed in dialogs. A string, because these ids exceed what a JavaScript number holds exactly.
+                  example: "-1001234567890"
+                language: { type: string, enum: [uz, ru, en] }
+      responses:
+        "201":
+          description: Connected
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/TelegramGroup" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /telegram/groups/{id}/rules:
+    put:
+      tags: [Telegram]
+      summary: Say what a group accepts
+      description: |
+        Replaces the group's rules and corridors together, because they are one
+        statement. A group may make posting rarer than the platform allows,
+        never more frequent.
+      security:
+        - bearerAuth: []
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GroupRules" }
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/TelegramGroup" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /telegram/groups/{id}:
+    delete:
+      tags: [Telegram]
+      summary: Stop posting to a group
+      security:
+        - bearerAuth: []
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Removed }
+        "404": { $ref: "#/components/responses/NotFound" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -987,6 +1258,119 @@ components:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
 
   schemas:
+    TelegramLoginStep:
+      type: object
+      properties:
+        account_id: { type: string, format: uuid }
+        step:
+          type: string
+          enum: [code, password, connected]
+          description: What the person has to do next.
+
+    TelegramAccount:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        mine:
+          type: boolean
+          description: Only the owner of an account can post with it or disconnect it.
+        phone: { type: string, example: "+99890 *** ** 67" }
+        label: { type: string }
+        status:
+          type: string
+          enum: [connecting, active, paused, restricted, revoked, disabled]
+          description: |
+            paused is Telegram asking for a wait; restricted is Telegram limiting
+            the account for sending too much, and nothing is sent until it is
+            lifted; revoked means the session ended and the account has to be
+            connected again.
+        status_reason: { type: string, nullable: true }
+        paused_until: { type: string, format: date-time, nullable: true }
+        consent_at: { type: string, format: date-time, nullable: true }
+        last_used_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    TelegramDialog:
+      type: object
+      properties:
+        peer_id: { type: string, example: "-1001234567890" }
+        title: { type: string }
+        username: { type: string, nullable: true }
+        kind: { type: string, enum: [group, supergroup, channel] }
+        member_count: { type: integer, nullable: true }
+        slowmode_enabled: { type: boolean }
+        can_send: { type: boolean }
+        group_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Set when this group is already connected.
+
+    GroupRoute:
+      type: object
+      description: One corridor. A country without a region means the whole country.
+      properties:
+        origin_country: { type: string, minLength: 2, maxLength: 2, nullable: true }
+        origin_region_id: { type: string, format: uuid, nullable: true }
+        destination_country: { type: string, minLength: 2, maxLength: 2, nullable: true }
+        destination_region_id: { type: string, format: uuid, nullable: true }
+
+    GroupRules:
+      type: object
+      properties:
+        language: { type: string, enum: [uz, ru, en] }
+        posting_enabled: { type: boolean }
+        cargo_type_codes:
+          type: array
+          items: { type: string }
+          description: Empty means the group takes any cargo.
+        vehicle_types:
+          type: array
+          items: { $ref: "#/components/schemas/VehicleType" }
+          description: Empty means the group takes any body.
+        min_weight_kg: { type: integer, nullable: true }
+        max_weight_kg: { type: integer, nullable: true }
+        hourly_limit: { type: integer, minimum: 1, maximum: 10 }
+        daily_limit:
+          type: integer
+          minimum: 1
+          maximum: 20
+          description: Capped at what the platform allows.
+        cooldown_minutes:
+          type: integer
+          minimum: 0
+          description: The group's own slow mode and the platform floor still apply if longer.
+        quiet_from_hour: { type: integer, minimum: 0, maximum: 23, nullable: true }
+        quiet_to_hour: { type: integer, minimum: 0, maximum: 23, nullable: true }
+        notes: { type: string, maxLength: 500, nullable: true }
+        routes:
+          type: array
+          maxItems: 30
+          items: { $ref: "#/components/schemas/GroupRoute" }
+
+    TelegramGroup:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        account_id: { type: string, format: uuid }
+        peer_id: { type: string }
+        title: { type: string }
+        username: { type: string, nullable: true }
+        kind: { type: string }
+        language: { type: string }
+        member_count: { type: integer, nullable: true }
+        slowmode_seconds: { type: integer }
+        can_send: { type: boolean }
+        posting_enabled: { type: boolean }
+        active: { type: boolean }
+        inactive_reason: { type: string, nullable: true }
+        last_posted_at: { type: string, format: date-time, nullable: true }
+        rules: { $ref: "#/components/schemas/GroupRules" }
+        routes:
+          type: array
+          items: { $ref: "#/components/schemas/GroupRoute" }
+
     GroupDecision:
       type: object
       description: |

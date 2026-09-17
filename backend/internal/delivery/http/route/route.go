@@ -28,6 +28,7 @@ type Handlers struct {
 	Load         *handler.LoadHandler
 	LoadAd       *handler.LoadAdHandler
 	Publish      *handler.PublishHandler
+	Telegram     *handler.TelegramHandler
 	Booking      *handler.BookingHandler
 	Trip         *handler.TripHandler
 	Chat         *handler.ChatHandler
@@ -62,6 +63,7 @@ func Register(app *fiber.App, h Handlers, d Deps) {
 	registerCompanyRoutes(v1, h, d)
 	registerLoadRoutes(v1, h, d)
 	registerLoadAdRoutes(v1, h, d)
+	registerTelegramRoutes(v1, h, d)
 	registerBookingRoutes(v1, h, d)
 	registerTripRoutes(v1, h, d)
 	registerChatRoutes(v1, h, d)
@@ -425,4 +427,28 @@ func registerLoadAdRoutes(v1 fiber.Router, h Handlers, d Deps) {
 
 	jobs := v1.Group("/posting-jobs", d.Auth.Authenticate(), d.Auth.RequireCompany())
 	jobs.Post("/:id/cancel", d.Auth.RequirePermission("load_ads.publish"), h.Publish.Cancel)
+}
+
+// registerTelegramRoutes mounts /api/v1/telegram — connecting a person's own
+// account and choosing the groups it posts to.
+//
+// The sign-in steps get a tight rate limit of their own: each one reaches
+// Telegram, and Telegram answers repeated attempts by locking the number.
+func registerTelegramRoutes(v1 fiber.Router, h Handlers, d Deps) {
+	tg := v1.Group("/telegram", d.Auth.Authenticate(), d.Auth.RequireCompany())
+	signIn := middleware.RateLimit(d.Cache, d.Log, "telegram-login", 10, 10*time.Minute)
+
+	accounts := tg.Group("/accounts", d.Auth.RequirePermission("telegram.connect"))
+	accounts.Get("/", h.Telegram.Accounts)
+	accounts.Post("/login", signIn, h.Telegram.StartLogin)
+	accounts.Post("/:id/code", signIn, h.Telegram.SubmitCode)
+	accounts.Post("/:id/password", signIn, h.Telegram.SubmitPassword)
+	accounts.Get("/:id/dialogs", h.Telegram.Dialogs)
+	accounts.Delete("/:id", h.Telegram.Disconnect)
+
+	groups := tg.Group("/groups", d.Auth.RequirePermission("telegram.groups.manage"))
+	groups.Get("/", h.Telegram.Groups)
+	groups.Post("/", h.Telegram.ConnectGroup)
+	groups.Put("/:id/rules", h.Telegram.SaveRules)
+	groups.Delete("/:id", h.Telegram.RemoveGroup)
 }

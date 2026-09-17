@@ -14,12 +14,14 @@ import (
 	"github.com/loadify/backend/internal/delivery/ws"
 	"github.com/loadify/backend/internal/domain"
 	"github.com/loadify/backend/internal/infrastructure/cache"
+	"github.com/loadify/backend/internal/infrastructure/crypto"
 	"github.com/loadify/backend/internal/infrastructure/database"
 	"github.com/loadify/backend/internal/infrastructure/payment"
 	"github.com/loadify/backend/internal/infrastructure/push"
 	"github.com/loadify/backend/internal/infrastructure/ratelimit"
 	"github.com/loadify/backend/internal/infrastructure/sms"
 	"github.com/loadify/backend/internal/infrastructure/storage"
+	telegramclient "github.com/loadify/backend/internal/infrastructure/telegram"
 	"github.com/loadify/backend/internal/repository"
 	"github.com/loadify/backend/internal/usecase"
 	"github.com/loadify/backend/pkg/hash"
@@ -104,6 +106,7 @@ type Usecases struct {
 	Load         *usecase.LoadUsecase
 	LoadAd       *usecase.LoadAdUsecase
 	Publish      *usecase.PublishUsecase
+	Telegram     *usecase.TelegramUsecase
 	Booking      *usecase.BookingUsecase
 	Trip         *usecase.TripUsecase
 	Chat         *usecase.ChatUsecase
@@ -125,6 +128,7 @@ type Handlers struct {
 	Load         *handler.LoadHandler
 	LoadAd       *handler.LoadAdHandler
 	Publish      *handler.PublishHandler
+	Telegram     *handler.TelegramHandler
 	Booking      *handler.BookingHandler
 	Trip         *handler.TripHandler
 	Chat         *handler.ChatHandler
@@ -275,6 +279,30 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 		repos.Posting, postingGuard, redisCache, cfg.Telegram, repos.Audit, log,
 	)
 
+	// Connecting an account needs the vault and the client in the API process
+	// too: the sign-in happens here. Both stay nil without credentials, and the
+	// usecase answers every call with "not set up" rather than failing to boot.
+	var (
+		tgAuth  domain.TelegramAuthenticator
+		tgVault domain.SessionVault
+	)
+	if cfg.Telegram.Enabled() {
+		keks, current, err := cfg.Telegram.KEKs()
+		if err != nil {
+			return nil, fmt.Errorf("session keys: %w", err)
+		}
+		vault, err := crypto.NewSessionVault(keks, current)
+		if err != nil {
+			return nil, fmt.Errorf("session vault: %w", err)
+		}
+		tgVault = vault
+		tgAuth = telegramclient.New(cfg.Telegram, log)
+	}
+	telegramUsecase := usecase.NewTelegramUsecase(
+		repos.TgAccounts, repos.TgGroups, repos.Posting, tgAuth, tgVault,
+		redisCache, cfg.Telegram, repos.Audit, log,
+	)
+
 	loadUsecase := usecase.NewLoadUsecase(
 		repos.Loads, repos.CargoTypes, repos.Saved, repos.Bookings, repos.Companies,
 		repos.Drivers, repos.Vehicles, repos.Geo, fileUsecase, repos.Tx, repos.Audit,
@@ -346,6 +374,7 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 			Load:         loadUsecase,
 			LoadAd:       loadAdUsecase,
 			Publish:      publishUsecase,
+			Telegram:     telegramUsecase,
 			Booking:      bookingUsecase,
 			Trip:         tripUsecase,
 			Chat:         chatUsecase,
@@ -365,6 +394,7 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 			Load:         handler.NewLoadHandler(loadUsecase, v),
 			LoadAd:       handler.NewLoadAdHandler(loadAdUsecase, v),
 			Publish:      handler.NewPublishHandler(publishUsecase, v),
+			Telegram:     handler.NewTelegramHandler(telegramUsecase, v),
 			Booking:      handler.NewBookingHandler(bookingUsecase, v),
 			Trip:         handler.NewTripHandler(tripUsecase, v),
 			Chat:         handler.NewChatHandler(chatUsecase, v),

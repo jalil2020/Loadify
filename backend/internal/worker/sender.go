@@ -23,6 +23,7 @@ import (
 	"github.com/loadify/backend/internal/domain"
 	"github.com/loadify/backend/pkg/apperror"
 	"github.com/loadify/backend/pkg/logger"
+	"github.com/loadify/backend/pkg/secret"
 )
 
 // guardUnavailableWait is how long a job waits when the guard itself cannot be
@@ -39,6 +40,7 @@ type Sender struct {
 	guard    domain.PostingGuard
 	telegram domain.TelegramSender
 	vault    domain.SessionVault
+	alerts   domain.DistributionAlerter
 	limits   config.TelegramConfig
 	owner    string
 	log      logger.Logger
@@ -48,7 +50,8 @@ type Sender struct {
 }
 
 // New builds a sender. owner names this worker in the lease, so a stuck job
-// can be traced to the process that took it.
+// can be traced to the process that took it. alerts may be nil, in which case
+// problems are only recorded, not reported to anyone.
 func New(
 	posting domain.PostingRepository,
 	accounts domain.TelegramAccountRepository,
@@ -57,13 +60,14 @@ func New(
 	guard domain.PostingGuard,
 	telegram domain.TelegramSender,
 	vault domain.SessionVault,
+	alerts domain.DistributionAlerter,
 	limits config.TelegramConfig,
 	owner string,
 	log logger.Logger,
 ) *Sender {
 	return &Sender{
 		posting: posting, accounts: accounts, groups: groups, ads: ads,
-		guard: guard, telegram: telegram, vault: vault, limits: limits,
+		guard: guard, telegram: telegram, vault: vault, alerts: alerts, limits: limits,
 		owner: owner, log: log, now: time.Now, jitter: spread,
 	}
 }
@@ -228,6 +232,7 @@ func (s *Sender) failure(
 		}
 		s.release(ctx, target)
 		s.recordSpam(ctx, job, "flood_wait", tgErr.Wait)
+		s.alert(ctx, account, nil, domain.DistributionAlert{Kind: domain.AlertAccountPaused, Until: &until})
 		return rateLimitedCode(until, code, reason)
 
 	case domain.TelegramSlowmode:
@@ -243,13 +248,15 @@ func (s *Sender) failure(
 		if err := s.accounts.SetStatus(ctx, account.ID, domain.TelegramAccountRestricted, &reason, nil); err != nil {
 			s.log.Error("account restriction not recorded", logger.Err(err))
 		}
-		if _, err := s.posting.CancelForAccount(ctx, account.ID, reason); err != nil {
-			s.log.Error("queued posts not cancelled after a restriction", logger.Err(err))
+		stopped, cancelErr := s.posting.CancelForAccount(ctx, account.ID, reason)
+		if cancelErr != nil {
+			s.log.Error("queued posts not cancelled after a restriction", logger.Err(cancelErr))
 		}
 		s.recordSpam(ctx, job, "peer_flood", 0)
 		s.log.Error("telegram restricted an account",
 			logger.String("account_id", account.ID.String()),
 			logger.String("company_id", account.CompanyID.String()))
+		s.alert(ctx, account, nil, domain.DistributionAlert{Kind: domain.AlertAccountRestricted, Cancelled: stopped})
 		return failedCode(code, reason)
 
 	case domain.TelegramWriteForbidden:
@@ -259,6 +266,7 @@ func (s *Sender) failure(
 		}
 		s.release(ctx, target)
 		s.recordSpam(ctx, job, "write_forbidden", 0)
+		s.alert(ctx, account, group, domain.DistributionAlert{Kind: domain.AlertGroupClosed})
 		return failedCode(code, reason)
 
 	case domain.TelegramGroupGone:
@@ -267,6 +275,7 @@ func (s *Sender) failure(
 			s.log.Warn("group not deactivated", logger.Err(err))
 		}
 		s.release(ctx, target)
+		s.alert(ctx, account, group, domain.DistributionAlert{Kind: domain.AlertGroupLost})
 		return failedCode(code, reason)
 
 	case domain.TelegramSessionRevoked:
@@ -274,10 +283,12 @@ func (s *Sender) failure(
 		if err := s.accounts.SetStatus(ctx, account.ID, domain.TelegramAccountRevoked, &reason, nil); err != nil {
 			s.log.Error("session revocation not recorded", logger.Err(err))
 		}
-		if _, err := s.posting.CancelForAccount(ctx, account.ID, reason); err != nil {
-			s.log.Error("queued posts not cancelled after a revocation", logger.Err(err))
+		stopped, cancelErr := s.posting.CancelForAccount(ctx, account.ID, reason)
+		if cancelErr != nil {
+			s.log.Error("queued posts not cancelled after a revocation", logger.Err(cancelErr))
 		}
 		s.release(ctx, target)
+		s.alert(ctx, account, nil, domain.DistributionAlert{Kind: domain.AlertAccountRevoked, Cancelled: stopped})
 		return cancelledCode(code, reason)
 
 	case domain.TelegramMessageTooLong:
@@ -301,6 +312,7 @@ func (s *Sender) failure(
 		// and bans happen, so an unknown error ends the job.
 		s.log.Error("unclassified telegram failure",
 			logger.String("job_id", job.ID.String()), logger.Err(err))
+		s.alert(ctx, account, group, domain.DistributionAlert{Kind: domain.AlertTelegramUnknown, ErrorCode: code})
 		return failedCode(code, "Telegram refused the post for a reason we do not recognise.")
 	}
 }
@@ -384,6 +396,33 @@ func (s *Sender) retryLater(job *domain.PostingJob, now time.Time, cause error) 
 		return failed("unavailable", "The post could not be prepared after several attempts.")
 	}
 	return pendingCode(now.Add(s.jitter(domain.Backoff(job.Attempt))), "unavailable")
+}
+
+// alert tells the people who can act, filling in whose account and which
+// group. The account is named by its label, or its masked number when it has
+// none; the number itself never leaves.
+func (s *Sender) alert(
+	ctx context.Context,
+	account *domain.TelegramAccount,
+	group *domain.TelegramGroup,
+	alert domain.DistributionAlert,
+) {
+	if s.alerts == nil {
+		return
+	}
+	alert.CompanyID = account.CompanyID
+	alert.AccountID = account.ID
+	alert.OwnerID = account.UserID
+	alert.AccountLabel = account.Label
+	if alert.AccountLabel == "" {
+		alert.AccountLabel = secret.MaskPhone(account.Phone)
+	}
+	if group != nil {
+		id := group.ID
+		alert.GroupID = &id
+		alert.GroupTitle = group.Title
+	}
+	s.alerts.Alert(ctx, alert)
 }
 
 func (s *Sender) recordSpam(ctx context.Context, job *domain.PostingJob, kind string, wait time.Duration) {

@@ -18,6 +18,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-s -w -X github.com/loadify/backend/internal/bootstrap.Version=${VERSION}" \
     -o /out/api ./cmd/api \
  && CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-s -w -X github.com/loadify/backend/internal/bootstrap.Version=${VERSION}" \
+    -o /out/poster ./cmd/poster \
+ && CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-s -w" -o /out/migrate ./cmd/migrate \
  && CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-s -w" -o /out/seed ./cmd/seed
@@ -34,6 +37,7 @@ RUN apk add --no-cache ca-certificates tzdata curl \
 WORKDIR /app
 
 COPY --from=build /out/api /app/api
+COPY --from=build /out/poster /app/poster
 COPY --from=build /out/migrate /app/migrate
 COPY --from=build /out/seed /app/seed
 COPY --from=build /src/migrations /app/migrations
@@ -45,7 +49,8 @@ ENV TZ=Asia/Tashkent
 EXPOSE 8080
 
 # The container is unhealthy the moment it stops serving, not merely when the
-# process dies — a wedged server still holds its PID.
+# process dies — a wedged server still holds its PID. The posting worker runs
+# from this image too and overrides this check in compose: it has no port.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -fsS http://localhost:8080/health || exit 1
 

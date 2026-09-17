@@ -24,6 +24,7 @@ type harness struct {
 	ads      *adStore
 	guard    *guardStub
 	telegram *telegramStub
+	alerts   *alertBook
 	job      *domain.PostingJob
 }
 
@@ -37,14 +38,14 @@ func newHarness(t *testing.T) *harness {
 	loading := time.Date(2026, 9, 20, 0, 0, 0, 0, time.UTC)
 
 	account := &domain.TelegramAccount{
-		ID: uuid.New(), CompanyID: companyID, UserID: uuid.New(),
+		ID: uuid.New(), CompanyID: companyID, UserID: uuid.New(), Phone: "+998901234567",
 		Status: domain.TelegramAccountActive, ConsentAt: &consent,
 		SessionCiphertext: []byte("sealed"), SessionKeyVersion: &version,
 	}
 	group := &domain.TelegramGroup{
 		ID: uuid.New(), CompanyID: companyID, AccountID: account.ID,
 		TgPeerID: -1001234567890, AccessHash: &accessHash, Language: "ru",
-		CanSend: true, PostingEnabled: true, Active: true,
+		Title: "Yuk markazi", CanSend: true, PostingEnabled: true, Active: true,
 	}
 	ad := &domain.LoadAd{ID: uuid.New(), CompanyID: companyID, LoadingDate: &loading}
 	job := &domain.PostingJob{
@@ -61,9 +62,10 @@ func newHarness(t *testing.T) *harness {
 		ads:      &adStore{ad: ad},
 		guard:    &guardStub{decision: domain.GuardDecision{Allowed: true}},
 		telegram: &telegramStub{result: domain.SendResult{MessageID: 777}},
+		alerts:   &alertBook{},
 		job:      job,
 	}
-	h.sender = New(h.posting, h.accounts, h.groups, h.ads, h.guard, h.telegram, vaultStub{},
+	h.sender = New(h.posting, h.accounts, h.groups, h.ads, h.guard, h.telegram, vaultStub{}, h.alerts,
 		config.TelegramConfig{MaxAttempts: 5, LeaseTTL: 2 * time.Minute, GroupCooldown: time.Hour},
 		"worker-test", logger.New("test", "error"))
 	h.sender.now = func() time.Time { return clock }
@@ -140,6 +142,11 @@ func TestFloodWaitPausesTheWholeAccount(t *testing.T) {
 		t.Errorf("error code = %v, want Telegram's own", outcome.ErrorCode)
 	}
 	assertSpam(t, h, "flood_wait")
+
+	alert := h.alerts.only(t, domain.AlertAccountPaused)
+	if alert.Until == nil || !alert.Until.Equal(want) || alert.OwnerID != h.accounts.account.UserID {
+		t.Errorf("alert = %+v, want the owner told until when", alert)
+	}
 }
 
 // Slow mode is the group's rule, so only that group waits.
@@ -154,6 +161,9 @@ func TestSlowmodeWaitsForTheGroupOnly(t *testing.T) {
 	}
 	if len(h.guard.pauses) != 0 || len(h.accounts.statuses) != 0 {
 		t.Error("slow mode in one group paused the whole account")
+	}
+	if len(h.alerts.alerts) != 0 {
+		t.Errorf("a group's slow mode is routine and reported nothing, got %+v", h.alerts.alerts)
 	}
 	assertSpam(t, h, "slowmode")
 }
@@ -179,6 +189,15 @@ func TestPeerFloodStopsTheAccount(t *testing.T) {
 		t.Error("the account's other queued posts were not cancelled")
 	}
 	assertSpam(t, h, "peer_flood")
+
+	alert := h.alerts.only(t, domain.AlertAccountRestricted)
+	if alert.Cancelled != 1 || alert.CompanyID != h.job.CompanyID {
+		t.Errorf("alert = %+v, want the company and the cancelled count", alert)
+	}
+	// The number is how people tell accounts apart, and it is still not sent.
+	if alert.AccountLabel != "+99890 *** ** 67" {
+		t.Errorf("label = %q, want the masked number", alert.AccountLabel)
+	}
 }
 
 func TestAGroupThatRefusesIsClosed(t *testing.T) {
@@ -194,6 +213,11 @@ func TestAGroupThatRefusesIsClosed(t *testing.T) {
 		t.Error("a refused post still counts against the limits")
 	}
 	assertSpam(t, h, "write_forbidden")
+
+	alert := h.alerts.only(t, domain.AlertGroupClosed)
+	if alert.GroupID == nil || *alert.GroupID != h.groups.group.ID || alert.GroupTitle != "Yuk markazi" {
+		t.Errorf("alert = %+v, want the group named", alert)
+	}
 }
 
 func TestAGroupTheAccountLeftIsDeactivated(t *testing.T) {
@@ -205,6 +229,7 @@ func TestAGroupTheAccountLeftIsDeactivated(t *testing.T) {
 	if outcome.Status != domain.PostingFailed || !h.groups.deactivated {
 		t.Errorf("status %q, group deactivated %v", outcome.Status, h.groups.deactivated)
 	}
+	h.alerts.only(t, domain.AlertGroupLost)
 }
 
 func TestARevokedSessionCancelsWhatIsQueued(t *testing.T) {
@@ -222,6 +247,7 @@ func TestARevokedSessionCancelsWhatIsQueued(t *testing.T) {
 	if len(h.posting.cancelled) != 1 {
 		t.Error("posts queued from a dead session were left in the queue")
 	}
+	h.alerts.only(t, domain.AlertAccountRevoked)
 }
 
 // Telegram refusing a random_id it has seen means the message already went out.
@@ -277,6 +303,9 @@ func TestAnUnknownRefusalEndsTheJob(t *testing.T) {
 	}
 	if h.guard.releases != 0 {
 		t.Error("an unexplained refusal gave its allowance back")
+	}
+	if alert := h.alerts.only(t, domain.AlertTelegramUnknown); alert.ErrorCode != "SOMETHING_NEW" {
+		t.Errorf("alert code = %q, want Telegram's own", alert.ErrorCode)
 	}
 }
 

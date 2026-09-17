@@ -49,8 +49,42 @@ tags:
   - name: Trips
   - name: Chat
   - name: Notifications
+    description: |
+      Besides marketplace events, the posting worker reports what stops
+      distribution. Each is its own `type`, so each can be muted separately in
+      preferences:
+
+      - `telegram.account_restricted` - Telegram restricted an account
+        (PEER_FLOOD). Posting from it stopped and its queue was cancelled. Sent
+        to the owner, company managers and platform admins. High priority.
+      - `telegram.account_revoked` - the session ended; connect again. Owner
+        and managers. High priority.
+      - `telegram.account_paused` - Telegram asked for a wait of 15 minutes or
+        more. Owner; platform admins too from one hour.
+      - `telegram.group_closed` - the account may no longer write in a group,
+        and posting there is off. Owner and managers.
+      - `telegram.group_lost` - the account is no longer in a group. Owner and
+        managers.
+      - `telegram.unknown_error` - Telegram refused a post for a reason the
+        platform does not classify. Platform admins only.
+
+      Each problem is reported once a day per account, group or error code
+      (a pause once per pause), in the recipient's language. `data` carries
+      `kind`, `company_id`, `account_id` and, where they apply, `group_id`,
+      `until`, `cancelled` and `error_code`.
   - name: Payments
   - name: Admin
+  - name: Load adverts
+    description: Freight adverts written in plain language, read into fields.
+  - name: Telegram
+    description: |
+      Each person connects their own Telegram account and chooses groups it is
+      already a member of. The platform never joins groups and never posts from
+      an account its owner did not connect.
+  - name: Distribution
+    description: |
+      Review, publish and follow adverts through the anti-spam guard and the
+      queue, with the plan's allowances and the dashboard.
 
 security:
   - bearerAuth: []

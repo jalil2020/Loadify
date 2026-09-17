@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"testing"
 	"time"
 
 	"github.com/google/uuid"
@@ -169,6 +170,21 @@ func (a *adStore) List(context.Context, uuid.UUID, domain.LoadAdFilter, int, int
 	return nil, 0, nil
 }
 func (a *adStore) Archive(context.Context, uuid.UUID, uuid.UUID) error { return nil }
+
+// alertBook keeps what would have been reported.
+type alertBook struct{ alerts []domain.DistributionAlert }
+
+func (a *alertBook) Alert(_ context.Context, alert domain.DistributionAlert) {
+	a.alerts = append(a.alerts, alert)
+}
+
+func (a *alertBook) only(t *testing.T, kind domain.DistributionAlertKind) domain.DistributionAlert {
+	t.Helper()
+	if len(a.alerts) != 1 || a.alerts[0].Kind != kind {
+		t.Fatalf("alerts = %+v, want exactly one %s", a.alerts, kind)
+	}
+	return a.alerts[0]
+}
 
 type guardStub struct {
 	decision    domain.GuardDecision

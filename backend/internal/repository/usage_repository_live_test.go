@@ -50,3 +50,50 @@ func TestUsageAndDashboardQueriesRunAgainstTheSchema(t *testing.T) {
 		t.Fatalf("SpentSince: %v", err)
 	}
 }
+
+// The group filter and the posting queue are raw SQL too. Every optional filter
+// is exercised both empty and set, because a placeholder GORM fails to bind
+// only shows up once the query reaches the server.
+func TestDistributionQueriesRunAgainstTheSchema(t *testing.T) {
+	db := liveDB(t)
+	ctx := context.Background()
+	groups := NewTelegramGroupRepository(db)
+	company := uuid.New()
+
+	vehicle, cargo, weight := "tent", "general", 20000
+	country := "UZ"
+	region := uuid.New()
+	for name, query := range map[string]domain.GroupCandidateQuery{
+		"no filters": {AccountID: uuid.New()},
+		"every filter": {
+			AccountID: uuid.New(), VehicleType: &vehicle, CargoTypeCode: &cargo, WeightKg: &weight,
+			OriginCountry: &country, OriginRegionID: &region, DestCountry: &country, DestRegionID: &region,
+		},
+	} {
+		found, err := groups.Candidates(ctx, company, query)
+		if err != nil {
+			t.Fatalf("Candidates (%s): %v", name, err)
+		}
+		if len(found) != 0 {
+			t.Errorf("Candidates (%s) found %d groups for a company with none", name, len(found))
+		}
+	}
+	if _, err := groups.ListWithRules(ctx, company); err != nil {
+		t.Fatalf("ListWithRules: %v", err)
+	}
+
+	posting := NewPostingRepository(db)
+	if _, err := posting.DueJobs(ctx, 10); err != nil {
+		t.Fatalf("DueJobs: %v", err)
+	}
+	job, err := posting.Claim(ctx, uuid.New(), "live-test", time.Minute)
+	if err != nil || job != nil {
+		t.Fatalf("Claim of a missing job = %v, %v; want nothing and no error", job, err)
+	}
+	if queued, err := posting.QueuedGroups(ctx, company, uuid.New()); err != nil || len(queued) != 0 {
+		t.Fatalf("QueuedGroups = %v, %v; want none", queued, err)
+	}
+	if _, _, err := posting.ListJobs(ctx, company, domain.PostingJobFilter{}, 0, 10); err != nil {
+		t.Fatalf("ListJobs: %v", err)
+	}
+}

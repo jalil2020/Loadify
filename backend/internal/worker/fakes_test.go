@@ -50,6 +50,9 @@ func (p *postingStore) FindRunByIdempotencyKey(context.Context, uuid.UUID, strin
 func (p *postingStore) FindJob(context.Context, uuid.UUID, uuid.UUID) (*domain.PostingJob, error) {
 	return nil, apperror.ErrNotFound
 }
+func (p *postingStore) QueuedGroups(context.Context, uuid.UUID, uuid.UUID) (map[uuid.UUID]bool, error) {
+	return nil, nil
+}
 func (p *postingStore) ListJobs(context.Context, uuid.UUID, domain.PostingJobFilter, int, int) ([]domain.PostingJob, int64, error) {
 	return nil, 0, nil
 }
@@ -61,9 +64,6 @@ func (p *postingStore) CancelForLoad(context.Context, uuid.UUID, uuid.UUID, stri
 	return 0, nil
 }
 func (p *postingStore) AppendEvent(context.Context, *domain.PostingEvent) error { return nil }
-func (p *postingStore) CountSentBetween(context.Context, uuid.UUID, time.Time, time.Time) (int64, error) {
-	return 0, nil
-}
 
 type accountStore struct {
 	account  *domain.TelegramAccount

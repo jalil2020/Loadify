@@ -86,10 +86,10 @@ WHERE g.company_id = @company
   AND g.account_id = @account
   AND g.deleted_at IS NULL
   AND g.active AND g.posting_enabled AND g.can_send
-  AND (cardinality(r.vehicle_types) = 0 OR @vehicle::text IS NULL OR @vehicle::text = ANY(r.vehicle_types))
-  AND (cardinality(r.cargo_type_codes) = 0 OR @cargo::text IS NULL OR @cargo::text = ANY(r.cargo_type_codes))
-  AND (r.min_weight_kg IS NULL OR @weight::int IS NULL OR @weight::int >= r.min_weight_kg)
-  AND (r.max_weight_kg IS NULL OR @weight::int IS NULL OR @weight::int <= r.max_weight_kg)
+  AND (cardinality(r.vehicle_types) = 0 OR CAST(@vehicle AS text) IS NULL OR CAST(@vehicle AS text) = ANY(r.vehicle_types))
+  AND (cardinality(r.cargo_type_codes) = 0 OR CAST(@cargo AS text) IS NULL OR CAST(@cargo AS text) = ANY(r.cargo_type_codes))
+  AND (r.min_weight_kg IS NULL OR CAST(@weight AS int) IS NULL OR CAST(@weight AS int) >= r.min_weight_kg)
+  AND (r.max_weight_kg IS NULL OR CAST(@weight AS int) IS NULL OR CAST(@weight AS int) <= r.max_weight_kg)
   AND (
     NOT EXISTS (SELECT 1 FROM telegram_group_routes tr WHERE tr.group_id = g.id)
     OR EXISTS (

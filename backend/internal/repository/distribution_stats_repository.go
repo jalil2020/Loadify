@@ -27,7 +27,7 @@ SELECT count(*) FILTER (WHERE created_at >= @day_start AND created_at < @day_end
 FROM load_ads
 WHERE company_id = @company
   AND created_at >= @month_start AND created_at < @month_end
-  AND (@user::uuid IS NULL OR created_by_user_id = @user::uuid)`
+  AND (CAST(@user AS uuid) IS NULL OR created_by_user_id = CAST(@user AS uuid))`
 
 const statsPostsSQL = `
 SELECT j.status,
@@ -38,7 +38,7 @@ FROM posting_jobs j
 JOIN telegram_accounts a ON a.id = j.account_id
 WHERE j.company_id = @company
   AND j.created_at >= @month_start AND j.created_at < @month_end
-  AND (@user::uuid IS NULL OR a.user_id = @user::uuid)
+  AND (CAST(@user AS uuid) IS NULL OR a.user_id = CAST(@user AS uuid))
 GROUP BY j.status`
 
 const statsGuardSQL = `
@@ -47,7 +47,7 @@ FROM spam_events e
 LEFT JOIN telegram_accounts a ON a.id = e.account_id
 WHERE e.company_id = @company
   AND e.created_at >= @day_start AND e.created_at < @day_end
-  AND (@user::uuid IS NULL OR a.user_id = @user::uuid)
+  AND (CAST(@user AS uuid) IS NULL OR a.user_id = CAST(@user AS uuid))
 GROUP BY e.kind`
 
 const statsAccountsSQL = `
@@ -56,7 +56,7 @@ FROM telegram_accounts
 WHERE company_id = @company
   AND deleted_at IS NULL
   AND status <> 'connecting'
-  AND (@user::uuid IS NULL OR user_id = @user::uuid)
+  AND (CAST(@user AS uuid) IS NULL OR user_id = CAST(@user AS uuid))
 GROUP BY status`
 
 const statsGroupsSQL = `
@@ -66,7 +66,7 @@ FROM telegram_groups g
 JOIN telegram_accounts a ON a.id = g.account_id AND a.deleted_at IS NULL
 WHERE g.company_id = @company
   AND g.deleted_at IS NULL
-  AND (@user::uuid IS NULL OR a.user_id = @user::uuid)`
+  AND (CAST(@user AS uuid) IS NULL OR a.user_id = CAST(@user AS uuid))`
 
 // A refused call cost nothing and is not a request; a cached answer is shown
 // separately because it is the saving the cache exists for.
@@ -79,7 +79,7 @@ SELECT count(*) FILTER (WHERE created_at >= @day_start AND created_at < @day_end
 FROM ai_tasks
 WHERE company_id = @company
   AND created_at >= @month_start AND created_at < @month_end
-  AND (@user::uuid IS NULL OR user_id = @user::uuid)`
+  AND (CAST(@user AS uuid) IS NULL OR user_id = CAST(@user AS uuid))`
 
 const statsProblemsSQL = `
 SELECT j.id AS job_id, j.group_id, g.title AS group_title, j.status,
@@ -90,7 +90,7 @@ JOIN telegram_accounts a ON a.id = j.account_id
 WHERE j.company_id = @company
   AND j.status IN ('failed', 'skipped')
   AND j.created_at >= @day_start AND j.created_at < @day_end
-  AND (@user::uuid IS NULL OR a.user_id = @user::uuid)
+  AND (CAST(@user AS uuid) IS NULL OR a.user_id = CAST(@user AS uuid))
 ORDER BY j.updated_at DESC
 LIMIT @limit`
 

@@ -174,6 +174,21 @@ func (f *fakePosting) FindJob(context.Context, uuid.UUID, uuid.UUID) (*domain.Po
 	return nil, apperror.ErrNotFound
 }
 
+// QueuedGroups mirrors the index: only jobs still waiting count.
+func (f *fakePosting) QueuedGroups(_ context.Context, companyID, loadAdID uuid.UUID) (map[uuid.UUID]bool, error) {
+	queued := map[uuid.UUID]bool{}
+	for _, job := range f.jobs {
+		if job.CompanyID != companyID || job.LoadAdID != loadAdID {
+			continue
+		}
+		switch job.Status {
+		case domain.PostingPending, domain.PostingProcessing, domain.PostingRateLimited:
+			queued[job.GroupID] = true
+		}
+	}
+	return queued, nil
+}
+
 func (f *fakePosting) ListJobs(_ context.Context, companyID uuid.UUID, filter domain.PostingJobFilter, _, _ int) ([]domain.PostingJob, int64, error) {
 	var out []domain.PostingJob
 	for _, job := range f.jobs {
@@ -204,9 +219,6 @@ func (f *fakePosting) CancelForAccount(context.Context, uuid.UUID, string) (int6
 }
 func (f *fakePosting) AppendEvent(context.Context, *domain.PostingEvent) error  { return nil }
 func (f *fakePosting) RecordSpamEvent(context.Context, *domain.SpamEvent) error { return nil }
-func (f *fakePosting) CountSentBetween(context.Context, uuid.UUID, time.Time, time.Time) (int64, error) {
-	return 0, nil
-}
 
 // fakeGuard answers with whatever the test set up, so the publish flow can be
 // exercised without Redis. The guard has its own tests.

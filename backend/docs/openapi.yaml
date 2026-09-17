@@ -1631,7 +1631,7 @@ components:
           description: What earned those points - route_region, vehicle_listed, posted_recently.
         reason:
           type: string
-          description: Why it was held back - duplicate, cooldown, group_limit, account_limit, quiet_hours, group_unavailable.
+          description: Why it was held back - duplicate, cooldown, group_limit, account_limit, quiet_hours, group_unavailable, or already_queued when an earlier publish of this advert is still waiting in that group.
         retry_after_seconds:
           type: integer
           description: Present when the answer is "not yet" rather than "no".

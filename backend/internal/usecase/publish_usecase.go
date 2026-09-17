@@ -113,10 +113,16 @@ func (u *PublishUsecase) Preview(
 	if err != nil {
 		return nil, err
 	}
+	queued, err := u.posting.QueuedGroups(ctx, companyID, ad.ID)
+	if err != nil {
+		return nil, err
+	}
 
 	response := &dto.PublishPreviewResponse{
 		AccountID:      account.ID,
 		Candidates:     len(candidates),
+		Approved:       []dto.GroupDecision{},
+		Skipped:        []dto.GroupDecision{},
 		MessagePreview: renderAd(ad, previewLanguage(ranked.Ranked)),
 		ExpiresAt:      now.Add(previewTTL),
 	}
@@ -133,6 +139,13 @@ func (u *PublishUsecase) Preview(
 			Title:   candidate.Candidate.Group.Title,
 			Score:   candidate.Score,
 			Reasons: reasonStrings(candidate.Reasons),
+		}
+		if queued[entry.GroupID] {
+			// Already waiting there from an earlier publish. Offering it again
+			// would only make the publish collide with its own queue.
+			entry.Reason = string(domain.SkipAlreadyQueued)
+			response.Skipped = append(response.Skipped, entry)
+			continue
 		}
 		decision := byGroup[candidate.Candidate.Group.ID]
 		if decision.Allowed {
@@ -254,7 +267,11 @@ func (u *PublishUsecase) Publish(
 		Candidates:        len(reviewed.GroupIDs),
 	}
 
-	jobs, titles, err := u.buildJobs(ctx, companyID, account.ID, ad, wanted)
+	queued, err := u.posting.QueuedGroups(ctx, companyID, adID)
+	if err != nil {
+		return nil, err
+	}
+	jobs, titles, err := u.buildJobs(ctx, companyID, account.ID, ad, wanted, queued)
 	if err != nil {
 		return nil, err
 	}
@@ -393,6 +410,7 @@ func (u *PublishUsecase) buildJobs(
 	companyID, accountID uuid.UUID,
 	ad *domain.LoadAd,
 	groupIDs []uuid.UUID,
+	queued map[uuid.UUID]bool,
 ) ([]domain.PostingJob, map[uuid.UUID]string, error) {
 	jobs := make([]domain.PostingJob, 0, len(groupIDs))
 	titles := make(map[uuid.UUID]string, len(groupIDs))
@@ -425,12 +443,14 @@ func (u *PublishUsecase) buildJobs(
 			RandomID:      randomID,
 			NextAttemptAt: now,
 		}
-		// A group that stopped being postable between the preview and now is
+		// A group that stopped being postable between the preview and now, or
+		// that another publish queued this advert for in the meantime, is
 		// recorded as skipped rather than dropped, so the run still adds up.
-		if !group.Postable() {
-			reason := domain.SkipGroupUnavailable
-			job.Status = domain.PostingSkipped
-			job.SkipReason = &reason
+		switch {
+		case !group.Postable():
+			job.Status, job.SkipReason = domain.PostingSkipped, skipReason(domain.SkipGroupUnavailable)
+		case queued[group.ID]:
+			job.Status, job.SkipReason = domain.PostingSkipped, skipReason(domain.SkipAlreadyQueued)
 		}
 		jobs = append(jobs, job)
 	}
@@ -720,3 +740,5 @@ func (u *PublishUsecase) summarise(ctx context.Context, companyID uuid.UUID, job
 	}
 	return out
 }
+
+func skipReason(reason domain.SkipReason) *domain.SkipReason { return &reason }

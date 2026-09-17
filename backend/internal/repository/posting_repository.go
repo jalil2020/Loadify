@@ -38,6 +38,10 @@ func (r *postingRepository) CreateRun(ctx context.Context, run *domain.PublishRu
 			return nil
 		}
 
+		// The run's id exists only now, so the jobs are tied to it here.
+		for i := range jobs {
+			jobs[i].RunID = run.ID
+		}
 		if err := tx.Create(&jobs).Error; err != nil {
 			if isUniqueViolation(err) {
 				return apperror.ErrConflict.
@@ -68,6 +72,25 @@ func skipReasonDetail(reason *domain.SkipReason) *string {
 	}
 	detail := string(*reason)
 	return &detail
+}
+
+// QueuedGroups reads the same statuses the one-copy-per-group index covers, so
+// what it reports is exactly what a second publish would collide with.
+func (r *postingRepository) QueuedGroups(ctx context.Context, companyID, loadAdID uuid.UUID) (map[uuid.UUID]bool, error) {
+	var ids []uuid.UUID
+	err := r.DB(ctx).Model(&domain.PostingJob{}).
+		Where("company_id = ? AND load_ad_id = ? AND status IN ?", companyID, loadAdID, []domain.PostingJobStatus{
+			domain.PostingPending, domain.PostingProcessing, domain.PostingRateLimited,
+		}).
+		Pluck("group_id", &ids).Error
+	if err != nil {
+		return nil, translate(err, "posting job")
+	}
+	queued := make(map[uuid.UUID]bool, len(ids))
+	for _, id := range ids {
+		queued[id] = true
+	}
+	return queued, nil
 }
 
 func (r *postingRepository) FindRunByIdempotencyKey(ctx context.Context, companyID uuid.UUID, key string) (*domain.PublishRun, error) {
@@ -310,16 +333,4 @@ func (r *postingRepository) RecordSpamEvent(ctx context.Context, event *domain.S
 		return translate(err, "spam event")
 	}
 	return nil
-}
-
-func (r *postingRepository) CountSentBetween(ctx context.Context, companyID uuid.UUID, from, to time.Time) (int64, error) {
-	var total int64
-	err := r.DB(ctx).Model(&domain.PostingJob{}).
-		Where("company_id = ? AND status = ? AND sent_at >= ? AND sent_at < ?",
-			companyID, domain.PostingSent, from, to).
-		Count(&total).Error
-	if err != nil {
-		return 0, translate(err, "posting job")
-	}
-	return total, nil
 }

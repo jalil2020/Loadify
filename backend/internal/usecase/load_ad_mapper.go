@@ -185,10 +185,19 @@ func parseResponse(draft domain.AdDraft) dto.ParseAdResponse {
 	if aiStatus == "" {
 		aiStatus = domain.AIStatusOff
 	}
+	// Empty lists are sent as [], which is what the contract promises and what
+	// a client iterating them expects.
+	missing, dropped := draft.Missing, draft.Dropped
+	if missing == nil {
+		missing = []string{}
+	}
+	if dropped == nil {
+		dropped = []string{}
+	}
 	return dto.ParseAdResponse{
 		Fields:   fields,
-		Missing:  draft.Missing,
-		Dropped:  draft.Dropped,
+		Missing:  missing,
+		Dropped:  dropped,
 		AIUsed:   draft.AIUsed,
 		AIStatus: aiStatus,
 		Draft:    requestFromAd(draft.Ad),

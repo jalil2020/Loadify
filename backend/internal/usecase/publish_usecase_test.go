@@ -396,3 +396,58 @@ func TestAGroupTheGuardSkippedCostsNothing(t *testing.T) {
 		t.Errorf("used = %d, want only the post that will be attempted", quota.used[domain.QuotaPostsPerMonth])
 	}
 }
+
+// Publishing an advert again only offers the groups it is not already waiting
+// in; before, the second publish collided with its own queue and sent nothing.
+func TestARepublishSkipsGroupsTheAdvertIsAlreadyQueuedIn(t *testing.T) {
+	f := newFixture(t, 2)
+	first := f.preview(t)
+	if _, err := f.usecase.Publish(context.Background(), f.userID, f.companyID, f.adID, "key-1",
+		dto.PublishRequest{PreviewToken: first.PreviewToken, GroupIDs: f.groupIDs[:1]}); err != nil {
+		t.Fatalf("first Publish: %v", err)
+	}
+
+	again := f.preview(t)
+	if len(again.Approved) != 1 || again.Approved[0].GroupID != f.groupIDs[1] {
+		t.Fatalf("approved = %+v, want only the group the advert is not queued in", again.Approved)
+	}
+	var reason string
+	for _, s := range again.Skipped {
+		if s.GroupID == f.groupIDs[0] {
+			reason = s.Reason
+		}
+	}
+	if reason != string(domain.SkipAlreadyQueued) {
+		t.Errorf("queued group reason = %q, want already_queued", reason)
+	}
+
+	res, err := f.usecase.Publish(context.Background(), f.userID, f.companyID, f.adID, "key-2",
+		dto.PublishRequest{PreviewToken: again.PreviewToken})
+	if err != nil {
+		t.Fatalf("second Publish: %v", err)
+	}
+	if res.Queued != 1 {
+		t.Errorf("queued %d, want the one new group", res.Queued)
+	}
+}
+
+// A group queued by another request between the review and the publish is
+// written down as skipped instead of failing the whole run.
+func TestAGroupQueuedInBetweenIsSkippedNotACollision(t *testing.T) {
+	f := newFixture(t, 2)
+	mine := f.preview(t)
+	theirs := f.preview(t)
+	if _, err := f.usecase.Publish(context.Background(), f.userID, f.companyID, f.adID, "theirs",
+		dto.PublishRequest{PreviewToken: theirs.PreviewToken, GroupIDs: f.groupIDs[:1]}); err != nil {
+		t.Fatalf("other Publish: %v", err)
+	}
+
+	res, err := f.usecase.Publish(context.Background(), f.userID, f.companyID, f.adID, "mine",
+		dto.PublishRequest{PreviewToken: mine.PreviewToken})
+	if err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if res.Queued != 1 || res.Skipped != 1 {
+		t.Errorf("queued %d skipped %d, want 1 and 1", res.Queued, res.Skipped)
+	}
+}

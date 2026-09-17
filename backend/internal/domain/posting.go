@@ -49,6 +49,9 @@ const (
 	SkipQuietHours       SkipReason = "quiet_hours"
 	SkipStale            SkipReason = "stale"
 	SkipGroupUnavailable SkipReason = "group_unavailable"
+	// The advert is already waiting in that group's queue from an earlier
+	// publish; a second copy is never queued beside it.
+	SkipAlreadyQueued SkipReason = "already_queued"
 )
 
 // PublishRun is one press of Publish: the advert, the account it goes out from,
@@ -240,10 +243,13 @@ type PostingJobFilter struct {
 // PostingRepository persists runs, jobs and their history.
 type PostingRepository interface {
 	// CreateRun writes the run, its jobs and their first history rows in one
-	// transaction. Nothing reaches the queue before that commit.
+	// transaction, and ties every job to the run it creates. Nothing reaches
+	// the queue before that commit.
 	CreateRun(ctx context.Context, run *PublishRun, jobs []PostingJob) error
 	FindRunByIdempotencyKey(ctx context.Context, companyID uuid.UUID, key string) (*PublishRun, error)
 	FindJob(ctx context.Context, companyID, id uuid.UUID) (*PostingJob, error)
+	// QueuedGroups is the groups this advert is still waiting to go out to.
+	QueuedGroups(ctx context.Context, companyID, loadAdID uuid.UUID) (map[uuid.UUID]bool, error)
 	ListJobs(ctx context.Context, companyID uuid.UUID, filter PostingJobFilter, offset, limit int) ([]PostingJob, int64, error)
 
 	// DueJobs returns jobs whose time has come and marks them as handed to the
@@ -261,7 +267,6 @@ type PostingRepository interface {
 
 	AppendEvent(ctx context.Context, event *PostingEvent) error
 	RecordSpamEvent(ctx context.Context, event *SpamEvent) error
-	CountSentBetween(ctx context.Context, companyID uuid.UUID, from, to time.Time) (int64, error)
 }
 
 // JobQueue carries job ids from the relay to the workers. Postgres remains the

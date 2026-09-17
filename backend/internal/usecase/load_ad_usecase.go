@@ -18,11 +18,13 @@ import (
 // nothing: a person sees what was understood, corrects it, and only then saves.
 // That gap is what keeps a misread from reaching a hundred groups.
 type LoadAdUsecase struct {
-	ads    domain.LoadAdRepository
-	parser domain.LoadAdParser
-	quota  domain.QuotaGuard
-	audit  domain.AuditLogger
-	log    logger.Logger
+	ads     domain.LoadAdRepository
+	parser  domain.LoadAdParser
+	quota   domain.QuotaGuard
+	posting domain.PostingRepository
+	tx      domain.TxManager
+	audit   domain.AuditLogger
+	log     logger.Logger
 }
 
 // NewLoadAdUsecase wires the advertisement usecase.
@@ -30,10 +32,14 @@ func NewLoadAdUsecase(
 	ads domain.LoadAdRepository,
 	parser domain.LoadAdParser,
 	quota domain.QuotaGuard,
+	posting domain.PostingRepository,
+	tx domain.TxManager,
 	audit domain.AuditLogger,
 	log logger.Logger,
 ) *LoadAdUsecase {
-	return &LoadAdUsecase{ads: ads, parser: parser, quota: quota, audit: audit, log: log}
+	return &LoadAdUsecase{
+		ads: ads, parser: parser, quota: quota, posting: posting, tx: tx, audit: audit, log: log,
+	}
 }
 
 // Parse reads an advertisement as it was written and returns a draft. It stores
@@ -69,7 +75,7 @@ func (u *LoadAdUsecase) Create(
 	if err != nil {
 		return nil, err
 	}
-	u.record(ctx, userID, "load_ad.create", ad.ID, ad.Fingerprint)
+	u.record(ctx, userID, "load_ad.create", ad.ID, map[string]any{"fingerprint": ad.Fingerprint})
 
 	res := adResponse(&ad)
 	return &res, nil
@@ -106,7 +112,7 @@ func (u *LoadAdUsecase) Update(
 	if err := u.ads.Update(ctx, &updated); err != nil {
 		return nil, err
 	}
-	u.record(ctx, userID, "load_ad.update", updated.ID, updated.Fingerprint)
+	u.record(ctx, userID, "load_ad.update", updated.ID, map[string]any{"fingerprint": updated.Fingerprint})
 
 	res := adResponse(&updated)
 	return &res, nil
@@ -151,11 +157,24 @@ func (u *LoadAdUsecase) List(
 
 // Archive retires an advertisement. The row stays: the posts that went out
 // still point at it, and a history entry whose advert vanished explains nothing.
+//
+// Archiving also stops whatever is still queued for the advert, in the same
+// transaction: an archived advert that keeps arriving in groups is exactly the
+// spam the person was trying to stop.
 func (u *LoadAdUsecase) Archive(ctx context.Context, userID, companyID, id uuid.UUID) error {
-	if err := u.ads.Archive(ctx, companyID, id); err != nil {
+	var stopped int64
+	err := u.tx.WithinTransaction(ctx, func(ctx context.Context) error {
+		if err := u.ads.Archive(ctx, companyID, id); err != nil {
+			return err
+		}
+		var err error
+		stopped, err = u.posting.CancelForLoad(ctx, companyID, id, "The advert was archived.")
+		return err
+	})
+	if err != nil {
 		return err
 	}
-	u.record(ctx, userID, "load_ad.archive", id, "")
+	u.record(ctx, userID, "load_ad.archive", id, map[string]any{"cancelled_posts": stopped})
 	return nil
 }
 
@@ -169,15 +188,13 @@ func statusFor(ad *domain.LoadAd) domain.LoadAdStatus {
 	return domain.LoadAdDraft
 }
 
-func (u *LoadAdUsecase) record(ctx context.Context, userID uuid.UUID, action string, id uuid.UUID, fingerprint string) {
+func (u *LoadAdUsecase) record(ctx context.Context, userID uuid.UUID, action string, id uuid.UUID, values map[string]any) {
 	entry := domain.AuditEntry{
 		ActorUserID:  &userID,
 		Action:       action,
 		ResourceType: "load_ad",
 		ResourceID:   &id,
-	}
-	if fingerprint != "" {
-		entry.NewValues = map[string]any{"fingerprint": fingerprint}
+		NewValues:    values,
 	}
 	if err := u.audit.Record(ctx, entry); err != nil {
 		u.log.Warn("audit write failed",

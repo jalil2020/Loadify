@@ -211,8 +211,20 @@ func (f *fakePosting) Finish(context.Context, uuid.UUID, domain.JobOutcome) erro
 func (f *fakePosting) Cancel(context.Context, uuid.UUID, uuid.UUID) (bool, error) {
 	return false, nil
 }
-func (f *fakePosting) CancelForLoad(context.Context, uuid.UUID, uuid.UUID, string) (int64, error) {
-	return 0, nil
+func (f *fakePosting) CancelForLoad(_ context.Context, companyID, loadAdID uuid.UUID, _ string) (int64, error) {
+	var n int64
+	for i := range f.jobs {
+		job := &f.jobs[i]
+		if job.CompanyID != companyID || job.LoadAdID != loadAdID {
+			continue
+		}
+		switch job.Status {
+		case domain.PostingPending, domain.PostingProcessing, domain.PostingRateLimited:
+			job.Status = domain.PostingCancelled
+			n++
+		}
+	}
+	return n, nil
 }
 func (f *fakePosting) CancelForAccount(context.Context, uuid.UUID, string) (int64, error) {
 	return 0, nil

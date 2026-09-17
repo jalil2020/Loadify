@@ -286,7 +286,7 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 		}
 	}
 	adParser := usecase.NewAdParser(repos.Geo, repos.CargoTypes, referenceUsecase, redisCache, cfg.App.Timezone, adExtractor, log)
-	loadAdUsecase := usecase.NewLoadAdUsecase(repos.LoadAds, adParser, quotaUsecase, repos.Audit, log)
+	loadAdUsecase := usecase.NewLoadAdUsecase(repos.LoadAds, adParser, quotaUsecase, repos.Posting, repos.Tx, repos.Audit, log)
 
 	// The guard is the only thing standing between an advert and a hundred
 	// groups, so it is constructed once and shared by every path that sends.

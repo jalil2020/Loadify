@@ -292,6 +292,8 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./nginx/certs:/etc/nginx/certs:ro
+      # Built with `make web-build` before the proxy starts.
+      - ../web/dist:/usr/share/nginx/html:ro
       - nginx-cache:/var/cache/nginx
     networks: [loadify]
     profiles: [proxy]

@@ -53,6 +53,24 @@ psql: ## Open a database shell
 run: ## Run the API on the host
 	cd $(BACKEND) && go run ./cmd/api
 
+# ─── web (needs Node) ───────────────────────────────────────────────
+
+.PHONY: web-install
+web-install: ## Install the web app's dependencies
+	npm --prefix web ci
+
+.PHONY: web-dev
+web-dev: ## Run the web app on :3000, proxying /api to :8080
+	npm --prefix web run dev
+
+.PHONY: web-build
+web-build: ## Build the web app into web/dist for nginx
+	npm --prefix web run build
+
+.PHONY: web-check
+web-check: ## Typecheck, lint and test the web app
+	npm --prefix web run typecheck && npm --prefix web run lint && npm --prefix web test
+
 .PHONY: dev-redis
 dev-redis: ## Run an in-memory Redis on :6379 (no Docker; development only)
 	cd $(BACKEND) && go run ./cmd/devredis

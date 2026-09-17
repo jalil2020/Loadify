@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+/* Colour tokens. Components use only these names, so the dark palette below is
+   the whole of dark mode. */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --color-canvas: #f6f7f9;
+  --color-surface: #ffffff;
+  --color-sunken: #f1f3f6;
+  --color-line: #e3e6eb;
+  --color-line-strong: #cfd4dc;
+  --color-ink: #151a23;
+  --color-ink-soft: #3d4555;
+  --color-muted: #6b7384;
+
+  --color-brand: #2563eb;
+  --color-brand-strong: #1d4ed8;
+  --color-brand-soft: #e8efff;
+  --color-on-brand: #ffffff;
+
+  --color-ok: #15803d;
+  --color-ok-soft: #e7f6ec;
+  --color-warn: #b45309;
+  --color-warn-soft: #fdf3e2;
+  --color-bad: #c42b2b;
+  --color-bad-soft: #fdeceb;
+  --color-info: #0e7490;
+  --color-info-soft: #e3f5f8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-canvas: #0e1117;
+    --color-surface: #151a22;
+    --color-sunken: #1b212b;
+    --color-line: #262d39;
+    --color-line-strong: #36404f;
+    --color-ink: #e8ebf1;
+    --color-ink-soft: #c2c8d3;
+    --color-muted: #8b93a3;
+
+    --color-brand: #5b8cff;
+    --color-brand-strong: #7aa2ff;
+    --color-brand-soft: #1b2743;
+    --color-on-brand: #0b1020;
+
+    --color-ok: #4cc27a;
+    --color-ok-soft: #13291d;
+    --color-warn: #f0a44b;
+    --color-warn-soft: #2e2213;
+    --color-bad: #ff7a73;
+    --color-bad-soft: #341818;
+    --color-info: #52c3d8;
+    --color-info-soft: #122b30;
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+/* Numbers in tables and stats line up. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}

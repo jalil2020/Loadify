@@ -3,7 +3,9 @@
 # Everything here works from a clean checkout with only Docker installed;
 # targets that need Go are marked.
 
-COMPOSE := docker compose -f deploy/docker-compose.yml
+# The env file is named explicitly: compose looks for .env next to the compose
+# file, not in the directory it is run from.
+COMPOSE := docker compose --env-file .env -f deploy/docker-compose.yml
 BACKEND := backend
 
 .DEFAULT_GOAL := help

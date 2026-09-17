@@ -53,6 +53,10 @@ psql: ## Open a database shell
 run: ## Run the API on the host
 	cd $(BACKEND) && go run ./cmd/api
 
+.PHONY: dev-redis
+dev-redis: ## Run an in-memory Redis on :6379 (no Docker; development only)
+	cd $(BACKEND) && go run ./cmd/devredis
+
 .PHONY: run-poster
 run-poster: ## Run the Telegram posting worker on the host
 	cd $(BACKEND) && go run ./cmd/poster

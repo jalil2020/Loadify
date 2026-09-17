@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -413,3 +414,69 @@ type TelegramGroupRepository interface {
 	Remove(ctx context.Context, companyID, id uuid.UUID) error
 	CountActive(ctx context.Context, companyID uuid.UUID) (int64, error)
 }
+
+// ─── connecting an account ──────────────────────────────────────────
+
+// TelegramLogin is a sign-in in progress.
+//
+// The session travels with it because Telegram ties the code it sent to the
+// connection that asked for it: the step that submits the code has to resume
+// that same authorisation, not open a new one. The caller seals it between
+// requests exactly as it seals a finished session.
+type TelegramLogin struct {
+	Phone    string
+	CodeHash string
+	Session  []byte
+}
+
+// TelegramLoginResult is where a sign-in step left things.
+type TelegramLoginResult struct {
+	// Session is the authorised session once signing in is complete, or the
+	// in-progress one when a password is still needed.
+	Session  []byte
+	TgUserID int64
+	// PasswordRequired means the account has two-step verification on and
+	// the person has to enter that password next.
+	PasswordRequired bool
+}
+
+// TelegramDialog is one group the account is a member of, as the person picks
+// from the list when connecting groups.
+type TelegramDialog struct {
+	PeerID          int64
+	AccessHash      *int64
+	Title           string
+	Username        *string
+	Kind            string
+	MemberCount     *int
+	SlowmodeEnabled bool
+	// CanSend is whether this account may write there at all. A group where it
+	// may not is shown but cannot be connected.
+	CanSend bool
+}
+
+// TelegramAuthenticator connects an account and reads what it can see.
+//
+// Codes and passwords arrive as secret.Value-backed strings and are used for the
+// one call that needs them; nothing here stores them.
+type TelegramAuthenticator interface {
+	SendCode(ctx context.Context, phone string) (TelegramLogin, error)
+	SignIn(ctx context.Context, login TelegramLogin, code string) (TelegramLoginResult, error)
+	CheckPassword(ctx context.Context, login TelegramLogin, password string) (TelegramLoginResult, error)
+	Dialogs(ctx context.Context, session []byte) ([]TelegramDialog, error)
+	SlowmodeSeconds(ctx context.Context, session []byte, peerID int64, accessHash *int64) (int, error)
+	// LogOut ends the session on Telegram's side, so disconnecting here also
+	// removes the entry from the person's list of active devices.
+	LogOut(ctx context.Context, session []byte) error
+}
+
+// Sign-in failures a person can act on, each with its own message rather than
+// a generic "login failed".
+var (
+	ErrTelegramPhoneInvalid    = errors.New("telegram: the phone number is not valid")
+	ErrTelegramPhoneBanned     = errors.New("telegram: this phone number is banned by Telegram")
+	ErrTelegramPhoneUnknown    = errors.New("telegram: this phone number has no Telegram account")
+	ErrTelegramCodeInvalid     = errors.New("telegram: the code is wrong")
+	ErrTelegramCodeExpired     = errors.New("telegram: the code has expired")
+	ErrTelegramPasswordInvalid = errors.New("telegram: the password is wrong")
+)

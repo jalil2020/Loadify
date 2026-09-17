@@ -18,6 +18,7 @@ import (
 	"github.com/loadify/backend/internal/infrastructure/database"
 	"github.com/loadify/backend/internal/infrastructure/queue"
 	"github.com/loadify/backend/internal/infrastructure/ratelimit"
+	telegramclient "github.com/loadify/backend/internal/infrastructure/telegram"
 	"github.com/loadify/backend/internal/repository"
 	"github.com/loadify/backend/internal/worker"
 	"github.com/loadify/backend/pkg/logger"
@@ -35,9 +36,9 @@ type PosterContainer struct {
 	Cache cache.Cache
 	Vault domain.SessionVault
 
-	// Telegram is the client that actually sends. Until it is configured the
-	// worker runs its health loop and nothing else: relaying jobs to a queue
-	// nobody can drain would only fill Redis.
+	// Telegram is the client that actually sends. Without credentials it is
+	// nil and the worker runs its health loop and nothing else: relaying jobs
+	// to a queue nobody can drain would only fill Redis.
 	Telegram domain.TelegramSender
 
 	Relay  *worker.Relay
@@ -75,10 +76,7 @@ func NewPosterContainer(cfg *config.Config, log logger.Logger) (*PosterContainer
 		return nil, fmt.Errorf("session vault: %w", err)
 	}
 	container.Vault = vault
-
-	if container.Telegram == nil {
-		return container, nil
-	}
+	container.Telegram = telegramclient.New(cfg.Telegram, log)
 	container.wire()
 	return container, nil
 }
@@ -143,10 +141,8 @@ func RunPoster(c *PosterContainer) error {
 	wg.Go(func() { c.runHealthLoop(ctx) })
 
 	switch {
-	case !c.Cfg.Telegram.Enabled():
-		c.Log.Warn("telegram credentials are not configured: nothing will be sent")
 	case c.Sender == nil:
-		c.Log.Warn("no telegram client is wired into this build: nothing will be sent")
+		c.Log.Warn("telegram credentials are not configured: nothing will be sent")
 	default:
 		wg.Go(func() { c.Relay.Run(ctx) })
 		wg.Go(func() {

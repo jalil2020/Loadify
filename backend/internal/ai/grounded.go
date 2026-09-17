@@ -13,6 +13,7 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/google/uuid"
@@ -49,7 +50,11 @@ func (p *GroundedParser) Parse(ctx context.Context, text string) (domain.AdDraft
 	if err != nil {
 		return draft, err
 	}
-	if !p.worthAsking(draft) {
+	if p.extractor == nil {
+		return draft, nil
+	}
+	if !worthAsking(draft) {
+		draft.AIStatus = domain.AIStatusNotNeeded
 		return draft, nil
 	}
 
@@ -58,12 +63,20 @@ func (p *GroundedParser) Parse(ctx context.Context, text string) (domain.AdDraft
 		Missing:    draft.Missing,
 		Unresolved: draft.Dropped,
 	})
-	if err != nil {
+	switch {
+	case errors.Is(err, domain.ErrAIQuotaExhausted), errors.Is(err, domain.ErrAIBudgetExhausted):
+		// Expected, and already recorded; the person is told the model sat
+		// this one out.
+		draft.AIStatus = domain.AIStatusLimited
+		return draft, nil
+	case err != nil:
 		// A model outage degrades the reading; it never fails the request. The
 		// person still sees what the rules understood and what is missing.
 		p.log.Warn("advert extraction failed, keeping the rules result", logger.Err(err))
+		draft.AIStatus = domain.AIStatusUnavailable
 		return draft, nil
 	}
+	draft.AIStatus = domain.AIStatusNoResult
 	if len(result.Fields) == 0 {
 		return draft, nil
 	}
@@ -79,6 +92,7 @@ func (p *GroundedParser) Parse(ctx context.Context, text string) (domain.AdDraft
 	}
 
 	draft.AIUsed = true
+	draft.AIStatus = domain.AIStatusUsed
 	draft.Ad.Fingerprint = draft.Ad.ComputeFingerprint()
 	draft.Missing = draft.Ad.MissingForPublish()
 	return draft, nil
@@ -86,8 +100,8 @@ func (p *GroundedParser) Parse(ctx context.Context, text string) (domain.AdDraft
 
 // worthAsking keeps the model off adverts it cannot improve: one the rules read
 // completely, and one where nothing was left unread for it to interpret.
-func (p *GroundedParser) worthAsking(draft domain.AdDraft) bool {
-	return p.extractor != nil && len(draft.Missing) > 0 && len(draft.Dropped) > 0
+func worthAsking(draft domain.AdDraft) bool {
+	return len(draft.Missing) > 0 && len(draft.Dropped) > 0
 }
 
 func (p *GroundedParser) resolver(ctx context.Context) (*nlq.Resolver, error) {

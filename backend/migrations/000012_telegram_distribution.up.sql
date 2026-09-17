@@ -200,6 +200,8 @@ CREATE INDEX idx_load_ads_company
 CREATE INDEX idx_load_ads_fingerprint
     ON load_ads (company_id, fingerprint) WHERE deleted_at IS NULL;
 CREATE INDEX idx_load_ads_creator ON load_ads (created_by_user_id, created_at DESC);
+-- The monthly advert allowance counts archived and deleted adverts too.
+CREATE INDEX idx_load_ads_month ON load_ads (company_id, created_at);
 CREATE TRIGGER trg_load_ads_updated_at BEFORE UPDATE ON load_ads
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
@@ -319,20 +321,9 @@ CREATE INDEX idx_spam_events_company ON spam_events (company_id, created_at DESC
 CREATE INDEX idx_spam_events_account ON spam_events (account_id, created_at DESC);
 CREATE INDEX idx_spam_events_kind ON spam_events (kind, created_at DESC);
 
--- ─── quotas and AI accounting ───────────────────────────────────────
--- Redis holds the hot counters; this is the durable monthly record the tariff
--- is enforced and invoiced against.
-CREATE TABLE usage_counters (
-    company_id UUID NOT NULL REFERENCES companies (id) ON DELETE CASCADE,
-    period     CHAR(7) NOT NULL,
-    metric     VARCHAR(32) NOT NULL,
-    used       INTEGER NOT NULL DEFAULT 0 CHECK (used >= 0),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (company_id, period, metric)
-);
-CREATE TRIGGER trg_usage_counters_updated_at BEFORE UPDATE ON usage_counters
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
+-- ─── AI accounting ─────────────────────────────────────────────────
+-- Tariff usage is counted from the records themselves (adverts, jobs, this
+-- table), so there is no separate tally to keep in step.
 CREATE TABLE ai_tasks (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     company_id    UUID NOT NULL REFERENCES companies (id) ON DELETE CASCADE,
@@ -353,6 +344,8 @@ CREATE TABLE ai_tasks (
 );
 CREATE INDEX idx_ai_tasks_company ON ai_tasks (company_id, created_at DESC);
 CREATE INDEX idx_ai_tasks_cache ON ai_tasks (kind, input_hash, created_at DESC);
+-- The platform-wide daily budget sums every company's calls since midnight.
+CREATE INDEX idx_ai_tasks_created ON ai_tasks (created_at);
 
 -- ─── permissions ────────────────────────────────────────────────────
 INSERT INTO permissions (code, resource, action, description) VALUES

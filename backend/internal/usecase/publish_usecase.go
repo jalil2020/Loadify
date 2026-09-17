@@ -37,6 +37,7 @@ type PublishUsecase struct {
 	cargoTypes domain.CargoTypeRepository
 	posting    domain.PostingRepository
 	guard      domain.PostingGuard
+	quota      domain.QuotaGuard
 	cache      cache.Cache
 	limits     config.TelegramConfig
 	audit      domain.AuditLogger
@@ -52,6 +53,7 @@ func NewPublishUsecase(
 	cargoTypes domain.CargoTypeRepository,
 	posting domain.PostingRepository,
 	guard domain.PostingGuard,
+	quota domain.QuotaGuard,
 	c cache.Cache,
 	limits config.TelegramConfig,
 	audit domain.AuditLogger,
@@ -59,7 +61,7 @@ func NewPublishUsecase(
 ) *PublishUsecase {
 	return &PublishUsecase{
 		ads: ads, accounts: accounts, groups: groups, cargoTypes: cargoTypes,
-		posting: posting, guard: guard, cache: c, limits: limits,
+		posting: posting, guard: guard, quota: quota, cache: c, limits: limits,
 		audit: audit, log: log, now: time.Now,
 	}
 }
@@ -165,7 +167,26 @@ func (u *PublishUsecase) Preview(
 		return nil, err
 	}
 	response.PreviewToken = token
+	response.PostsLeft = u.postsLeft(ctx, companyID)
 	return response, nil
+}
+
+// postsLeft is the month's remaining allowance, or nil for none. The preview is
+// still useful without it, so a failure to read it is logged, not returned.
+func (u *PublishUsecase) postsLeft(ctx context.Context, companyID uuid.UUID) *int {
+	if u.quota == nil {
+		return nil
+	}
+	status, err := u.quota.Status(ctx, companyID, domain.QuotaPostsPerMonth)
+	if err != nil {
+		u.log.Warn("post allowance not read for the preview", logger.Err(err))
+		return nil
+	}
+	if status.Unlimited() {
+		return nil
+	}
+	left := status.Remaining()
+	return &left
 }
 
 // Publish queues the advert for the groups the person reviewed.
@@ -245,7 +266,12 @@ func (u *PublishUsecase) Publish(
 		run.Approved++
 	}
 
-	if err := u.posting.CreateRun(ctx, run, jobs); err != nil {
+	// Only what will be attempted counts against the plan; a group the guard
+	// already refused is written down but costs nothing.
+	err = reserve(ctx, u.quota, companyID, domain.QuotaPostsPerMonth, run.Approved, func(ctx context.Context) error {
+		return u.posting.CreateRun(ctx, run, jobs)
+	})
+	if err != nil {
 		if apperror.Is(err, apperror.ErrConflict.Code) {
 			// Two requests raced on the same key; the other one won.
 			if existing, lookupErr := u.posting.FindRunByIdempotencyKey(ctx, companyID, idempotencyKey); lookupErr == nil {

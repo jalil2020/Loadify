@@ -56,6 +56,7 @@ func NewFiberApp(c *Container) *fiber.App {
 		LoadAd:       c.Handlers.LoadAd,
 		Publish:      c.Handlers.Publish,
 		Telegram:     c.Handlers.Telegram,
+		Dashboard:    c.Handlers.Dashboard,
 		Booking:      c.Handlers.Booking,
 		Trip:         c.Handlers.Trip,
 		Chat:         c.Handlers.Chat,

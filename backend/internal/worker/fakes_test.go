@@ -169,9 +169,6 @@ func (a *adStore) List(context.Context, uuid.UUID, domain.LoadAdFilter, int, int
 	return nil, 0, nil
 }
 func (a *adStore) Archive(context.Context, uuid.UUID, uuid.UUID) error { return nil }
-func (a *adStore) CountCreatedBetween(context.Context, uuid.UUID, time.Time, time.Time) (int64, error) {
-	return 0, nil
-}
 
 type guardStub struct {
 	decision    domain.GuardDecision

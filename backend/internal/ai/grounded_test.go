@@ -197,3 +197,32 @@ func TestNoExtractorIsNotAnError(t *testing.T) {
 		t.Errorf("destination = %v, want Moscow", draft.Ad.DestCityID)
 	}
 }
+
+// The person is told how the model took part, including when it did not.
+func TestTheParserSaysHowTheModelTookPart(t *testing.T) {
+	typo := "Кашри → Москва 20 тонн"
+	cases := []struct {
+		name      string
+		extractor domain.AdExtractor
+		text      string
+		want      string
+	}{
+		{"no model configured", nil, typo, ""},
+		{"nothing to ask", &fakeExtractor{}, "Ташкент → Москва", domain.AIStatusNotNeeded},
+		{"the model filled a field", &fakeExtractor{fields: map[string]domain.AdExtractedValue{
+			domain.FieldOrigin: {Value: "Карши", Evidence: "Кашри"},
+		}}, typo, domain.AIStatusUsed},
+		{"the model found nothing", &fakeExtractor{}, typo, domain.AIStatusNoResult},
+		{"the plan is used up", &fakeExtractor{err: domain.ErrAIQuotaExhausted}, typo, domain.AIStatusLimited},
+		{"the day's budget is spent", &fakeExtractor{err: domain.ErrAIBudgetExhausted}, typo, domain.AIStatusLimited},
+		{"the provider is down", &fakeExtractor{err: errors.New("503")}, typo, domain.AIStatusUnavailable},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			draft := parse(t, parserWith(tc.extractor), tc.text)
+			if draft.AIStatus != tc.want {
+				t.Errorf("ai status = %q, want %q", draft.AIStatus, tc.want)
+			}
+		})
+	}
+}

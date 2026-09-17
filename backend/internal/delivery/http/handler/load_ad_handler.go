@@ -23,15 +23,19 @@ func NewLoadAdHandler(ads *usecase.LoadAdUsecase, v validator.Validator) *LoadAd
 }
 
 // Parse reads an advertisement as it was written and returns what it understood.
-// It stores nothing, so a person can try a sentence and see the reading before
-// committing to it.
+// It stores no advert, so a person can try a sentence and see the reading
+// before committing to it.
 // POST /api/v1/load-ads/parse
 func (h *LoadAdHandler) Parse(c *fiber.Ctx) error {
 	var req dto.ParseAdRequest
 	if err := bind(c, &req, h.validator); err != nil {
 		return err
 	}
-	res, err := h.ads.Parse(c.UserContext(), req.Text)
+	userID, companyID, err := actorAndCompany(c)
+	if err != nil {
+		return err
+	}
+	res, err := h.ads.Parse(c.UserContext(), userID, companyID, req.Text)
 	if err != nil {
 		return err
 	}

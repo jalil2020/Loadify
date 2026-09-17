@@ -42,9 +42,6 @@ func (f *fakeAdRepo) List(context.Context, uuid.UUID, domain.LoadAdFilter, int, 
 	return nil, 0, nil
 }
 func (f *fakeAdRepo) Archive(context.Context, uuid.UUID, uuid.UUID) error { return nil }
-func (f *fakeAdRepo) CountCreatedBetween(context.Context, uuid.UUID, time.Time, time.Time) (int64, error) {
-	return 0, nil
-}
 
 type fakeAccountRepo struct{ accounts []domain.TelegramAccount }
 

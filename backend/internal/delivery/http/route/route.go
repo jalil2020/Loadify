@@ -29,6 +29,7 @@ type Handlers struct {
 	LoadAd       *handler.LoadAdHandler
 	Publish      *handler.PublishHandler
 	Telegram     *handler.TelegramHandler
+	Dashboard    *handler.DashboardHandler
 	Booking      *handler.BookingHandler
 	Trip         *handler.TripHandler
 	Chat         *handler.ChatHandler
@@ -90,6 +91,7 @@ func registerPaymentRoutes(v1 fiber.Router, h Handlers, d Deps) {
 	subscriptions := v1.Group("/subscriptions", d.Auth.Authenticate())
 	subscriptions.Get("/me", h.Payment.GetSubscription)
 	subscriptions.Get("/entitlements", h.Payment.Entitlements)
+	subscriptions.Get("/usage", d.Auth.RequireCompany(), h.Dashboard.Usage)
 	subscriptions.Post("/", d.Auth.RequirePermission("payments.manage"), h.Payment.Subscribe)
 	subscriptions.Post("/cancel", d.Auth.RequirePermission("payments.manage"), h.Payment.CancelSubscription)
 
@@ -451,4 +453,8 @@ func registerTelegramRoutes(v1 fiber.Router, h Handlers, d Deps) {
 	groups.Post("/", h.Telegram.ConnectGroup)
 	groups.Put("/:id/rules", h.Telegram.SaveRules)
 	groups.Delete("/:id", h.Telegram.RemoveGroup)
+
+	v1.Get("/dashboard",
+		d.Auth.Authenticate(), d.Auth.RequireCompany(), d.Auth.RequirePermission("dashboard.view"),
+		h.Dashboard.Get)
 }

@@ -268,5 +268,4 @@ type LoadAdRepository interface {
 	FindByID(ctx context.Context, companyID, id uuid.UUID) (*LoadAd, error)
 	List(ctx context.Context, companyID uuid.UUID, filter LoadAdFilter, offset, limit int) ([]LoadAd, int64, error)
 	Archive(ctx context.Context, companyID, id uuid.UUID) error
-	CountCreatedBetween(ctx context.Context, companyID uuid.UUID, from, to time.Time) (int64, error)
 }

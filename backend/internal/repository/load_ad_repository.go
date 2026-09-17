@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -121,16 +120,4 @@ func (r *loadAdRepository) Archive(ctx context.Context, companyID, id uuid.UUID)
 		return apperror.ErrNotFound.WithMessage("load advert not found")
 	}
 	return nil
-}
-
-// CountCreatedBetween backs the monthly plan limit on adverts.
-func (r *loadAdRepository) CountCreatedBetween(ctx context.Context, companyID uuid.UUID, from, to time.Time) (int64, error) {
-	var total int64
-	err := r.scoped(ctx, companyID).
-		Where("created_at >= ? AND created_at < ?", from, to).
-		Count(&total).Error
-	if err != nil {
-		return 0, translate(err, "load advert")
-	}
-	return total, nil
 }

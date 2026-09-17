@@ -52,6 +52,7 @@ type TelegramUsecase struct {
 	posting  domain.PostingRepository
 	auth     domain.TelegramAuthenticator
 	vault    domain.SessionVault
+	quota    domain.QuotaGuard
 	cache    cache.Cache
 	limits   config.TelegramConfig
 	audit    domain.AuditLogger
@@ -67,6 +68,7 @@ func NewTelegramUsecase(
 	posting domain.PostingRepository,
 	auth domain.TelegramAuthenticator,
 	vault domain.SessionVault,
+	quota domain.QuotaGuard,
 	c cache.Cache,
 	limits config.TelegramConfig,
 	audit domain.AuditLogger,
@@ -74,7 +76,7 @@ func NewTelegramUsecase(
 ) *TelegramUsecase {
 	return &TelegramUsecase{
 		accounts: accounts, groups: groups, posting: posting, auth: auth, vault: vault,
-		cache: c, limits: limits, audit: audit, log: log, now: time.Now,
+		quota: quota, cache: c, limits: limits, audit: audit, log: log, now: time.Now,
 	}
 }
 
@@ -117,6 +119,12 @@ func (u *TelegramUsecase) StartLogin(
 		if err := u.accounts.Disconnect(ctx, companyID, account.ID); err != nil {
 			return nil, err
 		}
+	}
+
+	// Checked before Telegram is asked for a code, so nobody types one only to
+	// be told the plan is full. The seat is taken when the sign-in completes.
+	if err := u.checkAccountSeat(ctx, companyID); err != nil {
+		return nil, err
 	}
 
 	login, err := u.auth.SendCode(ctx, req.Phone)
@@ -242,12 +250,21 @@ func (u *TelegramUsecase) finish(
 		return nil, apperror.ErrInternal.WithMessage("Telegram accepted the sign-in but returned no session.")
 	}
 
+	defer wipe(result.Session)
+
 	ciphertext, version, err := u.vault.Seal(result.Session, account.SessionAAD())
-	wipe(result.Session)
 	if err != nil {
 		return nil, fmt.Errorf("seal session: %w", err)
 	}
-	if err := u.accounts.StoreSession(ctx, account.ID, ciphertext, int16(version), result.TgUserID); err != nil {
+	// A connecting account does not hold a seat, so two sign-ins started side
+	// by side are settled here, where the account becomes usable.
+	err = reserve(ctx, u.quota, account.CompanyID, domain.QuotaTelegramAccounts, 1, func(ctx context.Context) error {
+		return u.accounts.StoreSession(ctx, account.ID, ciphertext, int16(version), result.TgUserID)
+	})
+	if err != nil {
+		if apperror.Is(err, apperror.ErrQuotaExceeded.Code) {
+			u.abandonLogin(ctx, account, result.Session)
+		}
 		return nil, err
 	}
 
@@ -256,6 +273,36 @@ func (u *TelegramUsecase) finish(
 	}
 	u.record(ctx, userID, "telegram_account.connected", account.ID)
 	return &dto.TelegramLoginStep{AccountID: account.ID, Step: loginStepConnected}, nil
+}
+
+// checkAccountSeat refuses a new sign-in when the plan's accounts are taken.
+func (u *TelegramUsecase) checkAccountSeat(ctx context.Context, companyID uuid.UUID) error {
+	if u.quota == nil {
+		return nil
+	}
+	status, err := u.quota.Status(ctx, companyID, domain.QuotaTelegramAccounts)
+	if err != nil {
+		return err
+	}
+	if status.Exceeded(1) {
+		return quotaExceeded(status, 1, time.UTC)
+	}
+	return nil
+}
+
+// abandonLogin ends a sign-in that cannot be kept. The session Telegram just
+// issued is ended on Telegram's side too, so no device the platform will never
+// use stays in the person's list, and the account record is retired.
+func (u *TelegramUsecase) abandonLogin(ctx context.Context, account *domain.TelegramAccount, session []byte) {
+	if err := u.auth.LogOut(ctx, session); err != nil {
+		u.log.Warn("over-quota session not ended on Telegram", logger.Err(err))
+	}
+	if err := u.accounts.Disconnect(ctx, account.CompanyID, account.ID); err != nil {
+		u.log.Warn("over-quota sign-in not retired", logger.Err(err))
+	}
+	if err := u.cache.Delete(ctx, loginKey(account.ID), loginAttemptsKey(account.ID)); err != nil {
+		u.log.Warn("pending login not cleared", logger.Err(err))
+	}
 }
 
 func (u *TelegramUsecase) storeLogin(ctx context.Context, accountID uuid.UUID, login domain.TelegramLogin) error {
@@ -456,7 +503,18 @@ func (u *TelegramUsecase) ConnectGroup(
 		Active:          true,
 		LastSyncedAt:    &now,
 	}
-	if err := u.groups.Upsert(ctx, group); err != nil {
+	// Reconnecting a group this account already has changes nothing about how
+	// many the company holds.
+	seats := 1
+	if connected, err := u.groups.ListByAccount(ctx, companyID, account.ID); err != nil {
+		return nil, err
+	} else if slices.ContainsFunc(connected, func(g domain.TelegramGroup) bool { return g.TgPeerID == dialog.PeerID }) {
+		seats = 0
+	}
+	err = reserve(ctx, u.quota, companyID, domain.QuotaTelegramGroups, seats, func(ctx context.Context) error {
+		return u.groups.Upsert(ctx, group)
+	})
+	if err != nil {
 		return nil, err
 	}
 

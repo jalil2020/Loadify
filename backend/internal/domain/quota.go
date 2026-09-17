@@ -8,57 +8,69 @@ import (
 )
 
 // QuotaMetric is one thing a tariff limits. The values are the keys inside
-// subscription_plans.limits, so adding a limit to a plan needs no migration.
+// subscription_plans.limits, so changing an allowance needs no code.
 type QuotaMetric string
 
 // What the tariff counts.
 const (
+	// Standing counts: how many exist right now.
 	QuotaTelegramAccounts QuotaMetric = "tg_accounts"
 	QuotaTelegramGroups   QuotaMetric = "tg_groups"
-	QuotaLoadsPerMonth    QuotaMetric = "loads"
-	QuotaPostsPerMonth    QuotaMetric = "posts"
-	QuotaAIRequests       QuotaMetric = "ai_requests"
-	QuotaSearches         QuotaMetric = "searches"
-	QuotaMembers          QuotaMetric = "users"
+
+	// Monthly counts: how many were made this calendar month.
+	QuotaLoadsPerMonth QuotaMetric = "loads"
+	QuotaPostsPerMonth QuotaMetric = "posts"
+	QuotaAIRequests    QuotaMetric = "ai_requests"
 )
+
+// QuotaMetrics is every metric in the order a usage page lists them.
+var QuotaMetrics = []QuotaMetric{
+	QuotaLoadsPerMonth,
+	QuotaPostsPerMonth,
+	QuotaAIRequests,
+	QuotaTelegramAccounts,
+	QuotaTelegramGroups,
+}
+
+// Monthly reports whether the metric starts again each month. The others are
+// a ceiling on what exists, and free up when something is removed.
+func (m QuotaMetric) Monthly() bool {
+	switch m {
+	case QuotaLoadsPerMonth, QuotaPostsPerMonth, QuotaAIRequests:
+		return true
+	default:
+		return false
+	}
+}
 
 // Unlimited is the limit value that means no ceiling.
 const Unlimited = -1
 
-// BillingPeriod is the month a usage row belongs to, in the company's own
-// timezone rather than UTC: a post at 02:00 on the first belongs to the month
-// the person thinks it does.
-func BillingPeriod(t time.Time, loc *time.Location) string {
+// BillingMonth is the calendar month containing t, in the company's timezone
+// rather than UTC: a post at 02:00 on the first belongs to the month the person
+// thinks it does.
+func BillingMonth(t time.Time, loc *time.Location) (from, to time.Time) {
 	if loc == nil {
 		loc = time.UTC
 	}
-	return t.In(loc).Format("2006-01")
+	local := t.In(loc)
+	from = time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, loc)
+	return from, from.AddDate(0, 1, 0)
 }
-
-// UsageCounter is the durable monthly tally. Redis holds the hot counters; this
-// is what the tariff is enforced and invoiced against.
-type UsageCounter struct {
-	CompanyID uuid.UUID   `gorm:"type:uuid;primaryKey"`
-	Period    string      `gorm:"type:char(7);primaryKey"`
-	Metric    QuotaMetric `gorm:"size:32;primaryKey"`
-	Used      int         `gorm:"not null;default:0"`
-	UpdatedAt time.Time
-}
-
-// TableName pins the usage table.
-func (UsageCounter) TableName() string { return "usage_counters" }
 
 // QuotaStatus is one metric's standing, shaped so the interface can say
 // "18 of 50 posts this month, resets on 1 October" without a second query.
 type QuotaStatus struct {
-	Metric   QuotaMetric
-	Limit    int
-	Used     int
+	Metric QuotaMetric
+	Limit  int
+	Used   int
+	// ResetsAt is when a monthly allowance starts again, and zero for a
+	// standing one.
 	ResetsAt time.Time
 }
 
 // Unlimited reports whether the tariff sets no ceiling for this metric.
-func (q QuotaStatus) Unlimited() bool { return q.Limit == Unlimited }
+func (q QuotaStatus) Unlimited() bool { return q.Limit < 0 }
 
 // Remaining is how much of the allowance is left, and is never negative.
 func (q QuotaStatus) Remaining() int {
@@ -79,24 +91,28 @@ func (q QuotaStatus) Exceeded(n int) bool {
 	return q.Used+n > q.Limit
 }
 
-// QuotaRepository persists the monthly tallies.
-type QuotaRepository interface {
-	// Add moves a counter and returns its new value. A negative delta is a
-	// refund and never takes the counter below zero.
-	Add(ctx context.Context, companyID uuid.UUID, period string, metric QuotaMetric, delta int) (int, error)
-	Usage(ctx context.Context, companyID uuid.UUID, period string) (map[QuotaMetric]int, error)
+// UsageRepository counts what a company has used.
+//
+// Usage is read from the records themselves — adverts, posting jobs, accounts,
+// groups, model calls — rather than from a tally kept beside them. A tally has
+// to be taken back by hand every time something does not happen after all; a
+// count of the records cannot drift, and a cancelled or skipped post frees its
+// allowance by being cancelled or skipped.
+type UsageRepository interface {
+	// Usage returns every metric, with the monthly ones counted between from
+	// and to.
+	Usage(ctx context.Context, companyID uuid.UUID, from, to time.Time) (map[QuotaMetric]int, error)
 }
 
-// QuotaGuard answers "may this company do one more of these", and is the only
+// QuotaGuard answers "may this company do n more of these", and is the only
 // thing that should be asked.
-//
-// Check reads, Consume reads and takes. Consume is called at the point of
-// action so two requests cannot both pass a check and then both act.
 type QuotaGuard interface {
-	Check(ctx context.Context, companyID uuid.UUID, metric QuotaMetric, want int) (QuotaStatus, error)
-	Consume(ctx context.Context, companyID uuid.UUID, metric QuotaMetric, n int) (QuotaStatus, error)
-	// Refund returns an allowance when the action did not happen after all —
-	// a post the guard skipped, an AI call that failed before the model ran.
-	Refund(ctx context.Context, companyID uuid.UUID, metric QuotaMetric, n int) error
+	// Status reads one metric without taking anything.
+	Status(ctx context.Context, companyID uuid.UUID, metric QuotaMetric) (QuotaStatus, error)
+	// Reserve runs act only when n more fit, and holds the company's lock for
+	// that metric while it does, so two requests cannot both pass the check and
+	// then both act. act is what creates the records that are then counted.
+	Reserve(ctx context.Context, companyID uuid.UUID, metric QuotaMetric, n int, act func(context.Context) error) error
+	// Snapshot is every metric, for the usage page and the dashboard.
 	Snapshot(ctx context.Context, companyID uuid.UUID) ([]QuotaStatus, error)
 }

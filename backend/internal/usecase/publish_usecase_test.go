@@ -97,7 +97,7 @@ func newFixture(t *testing.T, groupCount int) *fixture {
 	}
 
 	f.usecase = NewPublishUsecase(
-		f.ads, f.accounts, f.groups, fakeCargoRepo{}, f.posting, f.guard,
+		f.ads, f.accounts, f.groups, fakeCargoRepo{}, f.posting, f.guard, nil,
 		redisCache, config.TelegramConfig{GroupCooldown: time.Hour, GroupDaily: 3},
 		noopAudit{}, log,
 	)
@@ -330,5 +330,69 @@ func TestAnIncompleteAdvertIsRefusedWithItsGaps(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "contact_phone") {
 		t.Errorf("the error does not name the missing field: %v", err)
+	}
+}
+
+// ─── plan limits ────────────────────────────────────────────────────
+
+func TestThePreviewSaysHowManyPostsThePlanHasLeft(t *testing.T) {
+	f := newFixture(t, 3)
+	quota := newQuotaStub(map[domain.QuotaMetric]int{domain.QuotaPostsPerMonth: 10})
+	quota.used[domain.QuotaPostsPerMonth] = 8
+	f.usecase.quota = quota
+
+	preview := f.preview(t)
+	if preview.PostsLeft == nil || *preview.PostsLeft != 2 {
+		t.Errorf("posts_left = %v, want 2", preview.PostsLeft)
+	}
+
+	f.usecase.quota = newQuotaStub(nil)
+	if unlimited := f.preview(t); unlimited.PostsLeft != nil {
+		t.Errorf("posts_left = %d on a plan with no limit, want null", *unlimited.PostsLeft)
+	}
+}
+
+func TestPublishingMoreThanThePlanHasLeftIsRefusedUntilNarrowed(t *testing.T) {
+	f := newFixture(t, 3)
+	quota := newQuotaStub(map[domain.QuotaMetric]int{domain.QuotaPostsPerMonth: 10})
+	quota.used[domain.QuotaPostsPerMonth] = 8
+	f.usecase.quota = quota
+	preview := f.preview(t)
+
+	_, err := f.usecase.Publish(context.Background(), f.userID, f.companyID, f.adID, "key-1",
+		dto.PublishRequest{PreviewToken: preview.PreviewToken})
+	wantCode(t, err, "QUOTA_EXCEEDED")
+	if len(f.posting.jobs) != 0 {
+		t.Fatalf("%d jobs were queued past the plan", len(f.posting.jobs))
+	}
+
+	// The review is still valid: the person picks two groups and goes on.
+	res, err := f.usecase.Publish(context.Background(), f.userID, f.companyID, f.adID, "key-2",
+		dto.PublishRequest{PreviewToken: preview.PreviewToken, GroupIDs: f.groupIDs[:2]})
+	if err != nil {
+		t.Fatalf("Publish narrowed: %v", err)
+	}
+	if res.Queued != 2 || quota.used[domain.QuotaPostsPerMonth] != 10 {
+		t.Errorf("queued %d, used %d; want 2 and 10", res.Queued, quota.used[domain.QuotaPostsPerMonth])
+	}
+}
+
+func TestAGroupTheGuardSkippedCostsNothing(t *testing.T) {
+	f := newFixture(t, 2)
+	quota := newQuotaStub(map[domain.QuotaMetric]int{domain.QuotaPostsPerMonth: 1})
+	f.usecase.quota = quota
+	preview := f.preview(t)
+	f.groups.candidates[0].Group.PostingEnabled = false
+
+	res, err := f.usecase.Publish(context.Background(), f.userID, f.companyID, f.adID, "key-1",
+		dto.PublishRequest{PreviewToken: preview.PreviewToken})
+	if err != nil {
+		t.Fatalf("Publish: %v; one post fits a plan of one", err)
+	}
+	if res.Queued != 1 || res.Skipped != 1 {
+		t.Errorf("queued %d skipped %d, want 1 and 1", res.Queued, res.Skipped)
+	}
+	if quota.used[domain.QuotaPostsPerMonth] != 1 {
+		t.Errorf("used = %d, want only the post that will be attempted", quota.used[domain.QuotaPostsPerMonth])
 	}
 }

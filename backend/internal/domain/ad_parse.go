@@ -42,6 +42,9 @@ type AdDraft struct {
 	Missing []string
 	Dropped []string
 	AIUsed  bool
+	// AIStatus says how a model took part: one of the AIStatus values, or empty
+	// when no model is configured.
+	AIStatus string
 }
 
 // Field names used in Sources and Missing. They are the wire contract too, so

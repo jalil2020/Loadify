@@ -623,6 +623,13 @@ paths:
         that state the direction, Russian and English prepositions, both
         scripts. Relative days are resolved on the server against the company
         timezone.
+
+        When a model is configured it is asked only about fields the rules left
+        empty, and only when words were left unread. Each call is charged to the
+        company's monthly "ai_requests" allowance; an advert read before is
+        answered from cache for nothing. Once the allowance or the platform's
+        daily budget is spent the rules still read the advert and ai_status
+        says "limited" - parsing itself is never refused for it.
       security:
         - bearerAuth: []
       requestBody:
@@ -685,6 +692,9 @@ paths:
         invented one. What is required is what a group needs to act on the post:
         where from, where to, and someone to call. An advert missing any of them
         is stored as a draft rather than refused.
+
+        Every stored advert counts against the plan's monthly "loads"
+        allowance, archived or not, so archiving does not hand it back.
       security:
         - bearerAuth: []
       requestBody:
@@ -703,6 +713,7 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: "#/components/schemas/LoadAd" }
+        "402": { $ref: "#/components/responses/QuotaExceeded" }
         "422": { $ref: "#/components/responses/ValidationError" }
 
   /load-ads/{id}:
@@ -773,6 +784,7 @@ paths:
         limit, a duplicate, quiet hours, a corridor that does not match.
 
         It sends nothing and consumes no allowance, so a person can look twice.
+        posts_left says how much of the plan's monthly allowance remains.
         The reply carries a preview_token that ties a publish to the list that
         was actually reviewed; it is valid for ten minutes and single use.
       security:
@@ -814,6 +826,12 @@ paths:
         was not in the preview cannot be posted to by naming it here. If the
         advert changed after the review, the request is refused, because the
         list no longer describes what would be sent.
+
+        Every group that will be attempted counts against the plan's monthly
+        "posts" allowance; a group the guard already refused costs nothing, and
+        a post that is later skipped, cancelled or fails is not counted. When
+        the approved groups do not fit what is left, nothing is queued and 402
+        is returned - narrow group_ids and publish again with the same preview.
       security:
         - bearerAuth: []
       parameters:
@@ -846,6 +864,7 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: "#/components/schemas/PublishResult" }
+        "402": { $ref: "#/components/responses/QuotaExceeded" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/ValidationError" }
@@ -953,6 +972,10 @@ paths:
 
         Rate limited tightly: every step reaches Telegram, and Telegram answers
         repeated attempts by locking the number.
+
+        Refused with 402 before any code is sent when the plan's "tg_accounts"
+        allowance is taken. An account holds a seat once connected, not while
+        connecting.
       security:
         - bearerAuth: []
       requestBody:
@@ -977,6 +1000,7 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: "#/components/schemas/TelegramLoginStep" }
+        "402": { $ref: "#/components/responses/QuotaExceeded" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/ValidationError" }
 
@@ -988,6 +1012,9 @@ paths:
         Answers with step "password" when the account has two-step verification,
         or "connected" when signing in is complete. Five wrong codes end the
         attempt.
+
+        If another sign-in took the plan's last account seat in the meantime,
+        the session Telegram just issued is ended again and 402 is returned.
       security:
         - bearerAuth: []
       parameters:
@@ -1012,6 +1039,7 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: "#/components/schemas/TelegramLoginStep" }
+        "402": { $ref: "#/components/responses/QuotaExceeded" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/ValidationError" }
 
@@ -1044,6 +1072,7 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: "#/components/schemas/TelegramLoginStep" }
+        "402": { $ref: "#/components/responses/QuotaExceeded" }
         "422": { $ref: "#/components/responses/ValidationError" }
 
   /telegram/accounts/{id}/dialogs:
@@ -1114,6 +1143,9 @@ paths:
         allowed to write there. A new group gets cautious default rules - one
         post an hour, a few a day - and its own slow mode is recorded so the
         cooldown respects it.
+
+        A new group takes one of the plan's "tg_groups" seats; connecting a
+        group this account already has again does not.
       security:
         - bearerAuth: []
       requestBody:
@@ -1141,6 +1173,7 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: "#/components/schemas/TelegramGroup" }
+        "402": { $ref: "#/components/responses/QuotaExceeded" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -1185,6 +1218,69 @@ paths:
       responses:
         "204": { description: Removed }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /subscriptions/usage:
+    get:
+      tags: [Distribution]
+      summary: What the company's plan allows and what is left
+      description: |
+        Monthly allowances (loads, posts, ai_requests) run by calendar month in
+        the platform timezone and carry resets_at. Standing ones (tg_accounts,
+        tg_groups) are how many may be connected at once and free up when one
+        is removed. A null limit is no limit.
+
+        Usage is counted from the records themselves: a post counts while it is
+        waiting or once sent, and not once it was skipped, cancelled or failed;
+        a model call counts unless it was answered from cache or refused.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The allowances
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Usage" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /dashboard:
+    get:
+      tags: [Distribution]
+      summary: Today's distribution at a glance
+      description: |
+        Adverts, posts by outcome, why the anti-spam guard held posts back,
+        connected accounts and groups, model use and cost, the plan's
+        allowances, and the last few posts that did not go out.
+
+        "Today" and "this month" are in the platform timezone, and posts are
+        counted by when they were queued. A company manager sees the whole
+        company by default; anyone else sees their own adverts, the posts sent
+        from their own accounts and their own model calls. The allowances are
+        always the company's, because the plan is.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: scope
+          schema: { type: string, enum: [mine, company] }
+          description: company is for managers only.
+      responses:
+        "200":
+          description: The dashboard
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Dashboard" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
 
 components:
   securitySchemes:
@@ -1256,8 +1352,120 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    QuotaExceeded:
+      description: |
+        QUOTA_EXCEEDED - the company's plan does not allow this. The message
+        says which allowance, what is left and when it starts again;
+        GET /subscriptions/usage has the numbers.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
 
   schemas:
+    QuotaItem:
+      type: object
+      properties:
+        metric:
+          type: string
+          enum: [loads, posts, ai_requests, tg_accounts, tg_groups]
+        limit: { type: integer, nullable: true, description: Null is no limit. }
+        used: { type: integer }
+        remaining: { type: integer, nullable: true }
+        resets_at:
+          type: string
+          format: date-time
+          description: Only on monthly allowances.
+
+    Usage:
+      type: object
+      properties:
+        period_start: { type: string, format: date-time }
+        period_end: { type: string, format: date-time }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/QuotaItem" }
+
+    PostCounts:
+      type: object
+      properties:
+        total: { type: integer }
+        queued:
+          type: integer
+          description: Waiting, being sent, or waiting again after Telegram asked for a pause.
+        sent: { type: integer }
+        failed: { type: integer }
+        skipped: { type: integer }
+        cancelled: { type: integer }
+
+    Dashboard:
+      type: object
+      properties:
+        scope: { type: string, enum: [mine, company] }
+        day: { type: string, format: date, example: "2026-09-17" }
+        timezone: { type: string, example: Asia/Tashkent }
+        loads:
+          type: object
+          properties:
+            today: { type: integer }
+            month: { type: integer }
+        posts:
+          type: object
+          properties:
+            today: { $ref: "#/components/schemas/PostCounts" }
+            month: { $ref: "#/components/schemas/PostCounts" }
+            success_rate:
+              type: number
+              nullable: true
+              description: Sent over sent plus failed today. Skips are the guard working, not failures.
+              example: 0.95
+            last_sent_at: { type: string, format: date-time, nullable: true }
+        guard_today:
+          type: object
+          additionalProperties: { type: integer }
+          description: Why posts were held back today, by reason.
+          example: { cooldown: 4, duplicate: 1 }
+        accounts:
+          type: object
+          properties:
+            total: { type: integer }
+            by_status:
+              type: object
+              additionalProperties: { type: integer }
+              example: { active: 2, paused: 1 }
+        groups:
+          type: object
+          properties:
+            connected: { type: integer }
+            postable:
+              type: integer
+              description: Active, with posting on and the account still allowed to write.
+        ai:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            requests_today: { type: integer }
+            requests_month: { type: integer }
+            cache_hits_month: { type: integer }
+            cost_month_usd: { type: number, example: 1.25 }
+            cost_month_micros: { type: integer, format: int64 }
+        quota:
+          type: array
+          items: { $ref: "#/components/schemas/QuotaItem" }
+        recent_problems:
+          type: array
+          maxItems: 5
+          items:
+            type: object
+            properties:
+              job_id: { type: string, format: uuid }
+              group_id: { type: string, format: uuid }
+              group_title: { type: string }
+              status: { type: string, enum: [failed, skipped] }
+              reason:
+                type: string
+                description: The guard's reason for a skip, or Telegram's error code for a failure.
+              at: { type: string, format: date-time }
+
     TelegramLoginStep:
       type: object
       properties:
@@ -1414,6 +1622,12 @@ components:
           type: string
           description: Ties a publish to the list that was reviewed. Single use, ten minutes.
         expires_at: { type: string, format: date-time }
+        posts_left:
+          type: integer
+          nullable: true
+          description: |
+            Posts the plan still allows this month, or null when it sets no
+            limit. Publishing more approved groups than this is refused.
 
     PublishResult:
       type: object
@@ -1494,7 +1708,17 @@ components:
           description: Words nothing understood, surfaced rather than swallowed.
         ai_used:
           type: boolean
-          description: Whether a model was called at all. False when the rules resolved everything.
+          description: Whether a model contributed a field.
+        ai_status:
+          type: string
+          enum: [off, not_needed, used, no_result, limited, unavailable]
+          description: |
+            How a model took part. off - none is configured; not_needed - the
+            rules left nothing a model could find; used - it filled at least
+            one field; no_result - it was asked and found nothing that checked
+            out; limited - the plan's allowance or the day's budget is spent;
+            unavailable - the provider failed. In every case the rules' reading
+            is returned.
         draft:
           allOf:
             - $ref: "#/components/schemas/SaveLoadAd"

@@ -9,7 +9,6 @@ WHERE code IN ('load_ads.create', 'load_ads.view', 'load_ads.delete', 'load_ads.
                'telegram.connect', 'telegram.groups.manage', 'posting.view', 'dashboard.view');
 
 DROP TABLE IF EXISTS ai_tasks;
-DROP TABLE IF EXISTS usage_counters;
 DROP TABLE IF EXISTS spam_events;
 DROP TABLE IF EXISTS posting_history;
 DROP TABLE IF EXISTS posting_jobs;

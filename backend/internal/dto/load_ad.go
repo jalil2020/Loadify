@@ -29,6 +29,10 @@ type ParseAdResponse struct {
 	Missing []string               `json:"missing"`
 	Dropped []string               `json:"dropped"`
 	AIUsed  bool                   `json:"ai_used"`
+	// AIStatus says how a model took part: off, not_needed, used, no_result,
+	// limited (the plan's allowance or the day's budget is spent) or
+	// unavailable.
+	AIStatus string `json:"ai_status"`
 	// Draft is the same content in the shape the create endpoint accepts, so a
 	// client edits what it was shown and posts it straight back.
 	Draft SaveLoadAdRequest `json:"draft"`

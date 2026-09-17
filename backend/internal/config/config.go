@@ -257,6 +257,12 @@ type AIConfig struct {
 	CacheTTL  time.Duration
 	HermesURL string
 	HermesKey string
+	// Prices in dollars per million tokens, used to account for each call.
+	PriceInPerMTok  float64
+	PriceOutPerMTok float64
+	// DailyBudgetUSD stops model calls across the platform once a day's
+	// spending reaches it. Zero means no brake.
+	DailyBudgetUSD float64
 }
 
 // Enabled reports whether a model may be called at all.
@@ -394,6 +400,10 @@ func Load(envFiles ...string) (*Config, error) {
 		CacheTTL:  getDuration("AI_CACHE_TTL", 24*time.Hour),
 		HermesURL: getString("HERMES_BASE_URL", ""),
 		HermesKey: getString("HERMES_API_KEY", ""),
+
+		PriceInPerMTok:  getFloat("AI_PRICE_INPUT_PER_MTOK", 0),
+		PriceOutPerMTok: getFloat("AI_PRICE_OUTPUT_PER_MTOK", 0),
+		DailyBudgetUSD:  getFloat("AI_DAILY_BUDGET_USD", 0),
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -482,6 +492,9 @@ func (c *Config) Validate() error {
 	}
 	if c.AI.Provider == AIProviderLLM && c.AI.APIKey == "" {
 		problems = append(problems, "AI_API_KEY is required when AI_PROVIDER is llm")
+	}
+	if c.AI.PriceInPerMTok < 0 || c.AI.PriceOutPerMTok < 0 || c.AI.DailyBudgetUSD < 0 {
+		problems = append(problems, "AI prices and AI_DAILY_BUDGET_USD cannot be negative")
 	}
 	if c.AI.Provider == AIProviderHermes && (c.AI.HermesURL == "" || c.AI.HermesKey == "") {
 		problems = append(problems, "HERMES_BASE_URL and HERMES_API_KEY are required when AI_PROVIDER is hermes")

@@ -42,6 +42,10 @@ type PublishPreviewResponse struct {
 	// PreviewToken ties a publish to the list that was actually reviewed.
 	PreviewToken string    `json:"preview_token"`
 	ExpiresAt    time.Time `json:"expires_at"`
+	// PostsLeft is how many posts the plan still allows this month, or null
+	// when it sets no limit. Publishing more approved groups than this is
+	// refused, so the person can narrow the list first.
+	PostsLeft *int `json:"posts_left"`
 }
 
 // PublishRequest sends the advert to the groups the person just reviewed.

@@ -181,12 +181,17 @@ func parseResponse(draft domain.AdDraft) dto.ParseAdResponse {
 		}
 	}
 
+	aiStatus := draft.AIStatus
+	if aiStatus == "" {
+		aiStatus = domain.AIStatusOff
+	}
 	return dto.ParseAdResponse{
-		Fields:  fields,
-		Missing: draft.Missing,
-		Dropped: draft.Dropped,
-		AIUsed:  draft.AIUsed,
-		Draft:   requestFromAd(draft.Ad),
+		Fields:   fields,
+		Missing:  draft.Missing,
+		Dropped:  draft.Dropped,
+		AIUsed:   draft.AIUsed,
+		AIStatus: aiStatus,
+		Draft:    requestFromAd(draft.Ad),
 	}
 }
 

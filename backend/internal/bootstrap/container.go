@@ -6,6 +6,7 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/loadify/backend/internal/ai"
 	"github.com/loadify/backend/internal/config"
@@ -79,6 +80,9 @@ type Repositories struct {
 	TgAccounts    domain.TelegramAccountRepository
 	TgGroups      domain.TelegramGroupRepository
 	Posting       domain.PostingRepository
+	Usage         domain.UsageRepository
+	AITasks       domain.AITaskRepository
+	Distribution  domain.DistributionStatsRepository
 	CargoTypes    domain.CargoTypeRepository
 	Saved         domain.SavedRepository
 	Bookings      domain.BookingRepository
@@ -107,6 +111,8 @@ type Usecases struct {
 	LoadAd       *usecase.LoadAdUsecase
 	Publish      *usecase.PublishUsecase
 	Telegram     *usecase.TelegramUsecase
+	Quota        *usecase.QuotaUsecase
+	Dashboard    *usecase.DashboardUsecase
 	Booking      *usecase.BookingUsecase
 	Trip         *usecase.TripUsecase
 	Chat         *usecase.ChatUsecase
@@ -129,6 +135,7 @@ type Handlers struct {
 	LoadAd       *handler.LoadAdHandler
 	Publish      *handler.PublishHandler
 	Telegram     *handler.TelegramHandler
+	Dashboard    *handler.DashboardHandler
 	Booking      *handler.BookingHandler
 	Trip         *handler.TripHandler
 	Chat         *handler.ChatHandler
@@ -201,6 +208,9 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 		TgAccounts:    repository.NewTelegramAccountRepository(db.DB),
 		TgGroups:      repository.NewTelegramGroupRepository(db.DB),
 		Posting:       repository.NewPostingRepository(db.DB),
+		Usage:         repository.NewUsageRepository(db.DB),
+		AITasks:       repository.NewAITaskRepository(db.DB),
+		Distribution:  repository.NewDistributionStatsRepository(db.DB),
 		CargoTypes:    repository.NewCargoTypeRepository(db.DB),
 		Saved:         repository.NewSavedRepository(db.DB),
 		Bookings:      repository.NewBookingRepository(db.DB),
@@ -255,6 +265,11 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 	referenceUsecase := usecase.NewReferenceUsecase(repos.Geo, redisCache, log)
 	searchUsecase := usecase.NewSearchUsecase(referenceUsecase, log)
 
+	// Days and months — for quotas and the dashboard — start in the platform's
+	// own timezone.
+	location := appLocation(cfg.App.Timezone, log)
+	quotaUsecase := usecase.NewQuotaUsecase(repos.Subscriptions, repos.Usage, redisCache, location, log)
+
 	// The advert parser reads the same reference data as the marketplace search,
 	// through its own wider vocabulary: these corridors cross borders.
 	var adExtractor domain.AdExtractor
@@ -265,18 +280,20 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 			// by the rules, and what they miss is reported rather than invented.
 			log.Warn("ai extractor unavailable, adverts will be read by the rules alone", logger.Err(err))
 		} else {
-			adExtractor = extractor
+			// Every call is charged to a company and refused once its plan or
+			// the day's budget is spent.
+			adExtractor = ai.NewMetered(extractor, quotaUsecase, repos.AITasks, redisCache, cfg.AI, location, log)
 		}
 	}
 	adParser := usecase.NewAdParser(repos.Geo, repos.CargoTypes, referenceUsecase, redisCache, cfg.App.Timezone, adExtractor, log)
-	loadAdUsecase := usecase.NewLoadAdUsecase(repos.LoadAds, adParser, repos.Audit, log)
+	loadAdUsecase := usecase.NewLoadAdUsecase(repos.LoadAds, adParser, quotaUsecase, repos.Audit, log)
 
 	// The guard is the only thing standing between an advert and a hundred
 	// groups, so it is constructed once and shared by every path that sends.
 	postingGuard := ratelimit.NewGuard(redisCache.Client(), cfg.Telegram)
 	publishUsecase := usecase.NewPublishUsecase(
 		repos.LoadAds, repos.TgAccounts, repos.TgGroups, repos.CargoTypes,
-		repos.Posting, postingGuard, redisCache, cfg.Telegram, repos.Audit, log,
+		repos.Posting, postingGuard, quotaUsecase, redisCache, cfg.Telegram, repos.Audit, log,
 	)
 
 	// Connecting an account needs the vault and the client in the API process
@@ -299,9 +316,10 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 		tgAuth = telegramclient.New(cfg.Telegram, log)
 	}
 	telegramUsecase := usecase.NewTelegramUsecase(
-		repos.TgAccounts, repos.TgGroups, repos.Posting, tgAuth, tgVault,
+		repos.TgAccounts, repos.TgGroups, repos.Posting, tgAuth, tgVault, quotaUsecase,
 		redisCache, cfg.Telegram, repos.Audit, log,
 	)
+	dashboardUsecase := usecase.NewDashboardUsecase(repos.Distribution, quotaUsecase, cfg.AI.Enabled(), location)
 
 	loadUsecase := usecase.NewLoadUsecase(
 		repos.Loads, repos.CargoTypes, repos.Saved, repos.Bookings, repos.Companies,
@@ -375,6 +393,8 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 			LoadAd:       loadAdUsecase,
 			Publish:      publishUsecase,
 			Telegram:     telegramUsecase,
+			Quota:        quotaUsecase,
+			Dashboard:    dashboardUsecase,
 			Booking:      bookingUsecase,
 			Trip:         tripUsecase,
 			Chat:         chatUsecase,
@@ -395,6 +415,7 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 			LoadAd:       handler.NewLoadAdHandler(loadAdUsecase, v),
 			Publish:      handler.NewPublishHandler(publishUsecase, v),
 			Telegram:     handler.NewTelegramHandler(telegramUsecase, v),
+			Dashboard:    handler.NewDashboardHandler(dashboardUsecase),
 			Booking:      handler.NewBookingHandler(bookingUsecase, v),
 			Trip:         handler.NewTripHandler(tripUsecase, v),
 			Chat:         handler.NewChatHandler(chatUsecase, v),
@@ -420,4 +441,15 @@ func (c *Container) Close(_ context.Context) {
 			c.Log.Warn("closing postgres failed", logger.Err(err))
 		}
 	}
+}
+
+// appLocation is the platform's timezone. Without the zone database the fixed
+// +05:00 offset is used, which is right for this market and never silently UTC.
+func appLocation(name string, log logger.Logger) *time.Location {
+	location, err := time.LoadLocation(name)
+	if err != nil {
+		log.Warn("timezone unavailable, using +05:00", logger.String("timezone", name), logger.Err(err))
+		return time.FixedZone("+05", 5*60*60)
+	}
+	return location
 }

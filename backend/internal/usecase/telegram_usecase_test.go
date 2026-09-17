@@ -304,7 +304,7 @@ func newConnectFixture(t *testing.T) *connectFixture {
 		companyID: uuid.New(),
 		userID:    uuid.New(),
 	}
-	f.usecase = NewTelegramUsecase(f.accounts, f.groups, f.posting, f.auth, vault, newTestCache(t),
+	f.usecase = NewTelegramUsecase(f.accounts, f.groups, f.posting, f.auth, vault, nil, newTestCache(t),
 		config.TelegramConfig{GroupDaily: 3, GroupCooldown: time.Hour}, noopAudit{}, logger.New("test", "error"))
 	return f
 }
@@ -698,5 +698,78 @@ func TestDialogsMarkGroupsAlreadyConnected(t *testing.T) {
 		if connected != (dialog.PeerID == "-1001") {
 			t.Errorf("%s connected = %v", dialog.Title, connected)
 		}
+	}
+}
+
+// ─── plan limits ────────────────────────────────────────────────────
+
+func TestAFullPlanRefusesBeforeTelegramSendsACode(t *testing.T) {
+	f := newConnectFixture(t)
+	quota := newQuotaStub(map[domain.QuotaMetric]int{domain.QuotaTelegramAccounts: 1})
+	quota.used[domain.QuotaTelegramAccounts] = 1
+	f.usecase.quota = quota
+
+	_, err := f.usecase.StartLogin(context.Background(), f.userID, f.companyID, dto.StartTelegramLoginRequest{
+		Phone: "+998901234567", ConsentVersion: TelegramConsentVersion,
+	})
+	wantCode(t, err, apperror.ErrQuotaExceeded.Code)
+	if f.auth.codeCalls != 0 {
+		t.Error("a code was sent for a sign-in the plan cannot keep")
+	}
+	if len(f.accounts.rows) != 0 {
+		t.Error("an account record was created anyway")
+	}
+}
+
+func TestASignInThatLosesTheLastSeatIsUndoneOnTelegramToo(t *testing.T) {
+	f := newConnectFixture(t)
+	quota := newQuotaStub(map[domain.QuotaMetric]int{domain.QuotaTelegramAccounts: 1})
+	f.usecase.quota = quota
+
+	accountID := f.start(t)
+	// Another sign-in, started alongside, finished first.
+	quota.used[domain.QuotaTelegramAccounts] = 1
+
+	_, err := f.usecase.SubmitCode(context.Background(), f.userID, f.companyID, accountID, secret.Value("12345"))
+	wantCode(t, err, apperror.ErrQuotaExceeded.Code)
+	if !f.auth.loggedOut {
+		t.Error("the session Telegram issued was left alive in the person's device list")
+	}
+	if _, kept := f.accounts.rows[accountID]; kept {
+		t.Error("the account that could not be kept was not retired")
+	}
+}
+
+func TestTheFinishedSignInTakesTheSeat(t *testing.T) {
+	f := newConnectFixture(t)
+	quota := newQuotaStub(map[domain.QuotaMetric]int{domain.QuotaTelegramAccounts: 2})
+	f.usecase.quota = quota
+
+	f.connect(t)
+	if got := quota.used[domain.QuotaTelegramAccounts]; got != 1 {
+		t.Errorf("seats used = %d, want 1", got)
+	}
+}
+
+func TestReconnectingAGroupNeedsNoFreeSeat(t *testing.T) {
+	f := newConnectFixture(t)
+	account := f.connect(t)
+	quota := newQuotaStub(map[domain.QuotaMetric]int{domain.QuotaTelegramGroups: 1})
+	f.usecase.quota = quota
+	f.auth.dialogs = []domain.TelegramDialog{openGroup(-1001, "Yuk markazi"), openGroup(-1002, "Fura bor")}
+
+	first := dto.ConnectGroupRequest{AccountID: account.ID, PeerID: "-1001"}
+	if _, err := f.usecase.ConnectGroup(context.Background(), f.userID, f.companyID, first); err != nil {
+		t.Fatalf("ConnectGroup: %v", err)
+	}
+	if _, err := f.usecase.ConnectGroup(context.Background(), f.userID, f.companyID, first); err != nil {
+		t.Fatalf("reconnecting the same group was refused: %v", err)
+	}
+
+	_, err := f.usecase.ConnectGroup(context.Background(), f.userID, f.companyID,
+		dto.ConnectGroupRequest{AccountID: account.ID, PeerID: "-1002"})
+	wantCode(t, err, apperror.ErrQuotaExceeded.Code)
+	if len(f.groups.groups) != 1 {
+		t.Errorf("groups = %d, want the one the plan allows", len(f.groups.groups))
 	}
 }

@@ -20,6 +20,7 @@ import (
 type LoadAdUsecase struct {
 	ads    domain.LoadAdRepository
 	parser domain.LoadAdParser
+	quota  domain.QuotaGuard
 	audit  domain.AuditLogger
 	log    logger.Logger
 }
@@ -28,15 +29,22 @@ type LoadAdUsecase struct {
 func NewLoadAdUsecase(
 	ads domain.LoadAdRepository,
 	parser domain.LoadAdParser,
+	quota domain.QuotaGuard,
 	audit domain.AuditLogger,
 	log logger.Logger,
 ) *LoadAdUsecase {
-	return &LoadAdUsecase{ads: ads, parser: parser, audit: audit, log: log}
+	return &LoadAdUsecase{ads: ads, parser: parser, quota: quota, audit: audit, log: log}
 }
 
 // Parse reads an advertisement as it was written and returns a draft. It stores
-// nothing and has no side effects.
-func (u *LoadAdUsecase) Parse(ctx context.Context, text string) (dto.ParseAdResponse, error) {
+// no advert; the only thing it may write is the record of a model call, which
+// is charged to the person's company.
+func (u *LoadAdUsecase) Parse(
+	ctx context.Context,
+	userID, companyID uuid.UUID,
+	text string,
+) (dto.ParseAdResponse, error) {
+	ctx = domain.WithActor(ctx, domain.Actor{UserID: userID, CompanyID: companyID})
 	draft, err := u.parser.Parse(ctx, text)
 	if err != nil {
 		return dto.ParseAdResponse{}, err
@@ -55,7 +63,10 @@ func (u *LoadAdUsecase) Create(
 	ad.CreatedByUserID = userID
 	ad.Status = statusFor(&ad)
 
-	if err := u.ads.Create(ctx, &ad); err != nil {
+	err := reserve(ctx, u.quota, companyID, domain.QuotaLoadsPerMonth, 1, func(ctx context.Context) error {
+		return u.ads.Create(ctx, &ad)
+	})
+	if err != nil {
 		return nil, err
 	}
 	u.record(ctx, userID, "load_ad.create", ad.ID, ad.Fingerprint)

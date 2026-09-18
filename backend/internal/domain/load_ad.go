@@ -137,13 +137,15 @@ type LoadAd struct {
 // TableName pins the advertisement table.
 func (LoadAd) TableName() string { return "load_ads" }
 
-// RequiredForPublish lists what a group needs to see for the post to be worth
-// sending: where from, where to, and someone to call.
+// RequiredForPublish lists what an advert without text needs before it can be
+// posted: where from, where to, and someone to call. An advert with text needs
+// none of it, because the text itself is what the groups receive.
 var RequiredForPublish = []string{"origin", "destination", "contact_phone"}
 
-// MissingForPublish returns the required fields that are still empty, in the
-// order a form would ask for them.
-func (a *LoadAd) MissingForPublish() []string {
+// MissingFields returns the required details the advert does not carry, in the
+// order a form would ask for them. It says what the reading could not find;
+// whether that stops a post is MissingForPublish's call.
+func (a *LoadAd) MissingFields() []string {
 	var missing []string
 	if a.OriginCityID == nil && a.OriginRegionID == nil && strings.TrimSpace(a.OriginText) == "" {
 		missing = append(missing, "origin")
@@ -155,6 +157,24 @@ func (a *LoadAd) MissingForPublish() []string {
 		missing = append(missing, "contact_phone")
 	}
 	return missing
+}
+
+// MissingForPublish returns what still stops the advert from being posted.
+//
+// The words a person wrote go to the groups exactly as written, so an advert
+// with text is complete: the person, not the parser, decides what a post says.
+// Only an advert built from fields alone, whose message the platform has to
+// compose, needs the corridor and a phone to make that message worth reading.
+func (a *LoadAd) MissingForPublish() []string {
+	if a.HasText() {
+		return nil
+	}
+	return a.MissingFields()
+}
+
+// HasText reports whether the advert carries words of its own to post.
+func (a *LoadAd) HasText() bool {
+	return strings.TrimSpace(a.RawText) != ""
 }
 
 // CanPublish reports whether the advertisement may go to the queue.
@@ -178,15 +198,25 @@ func (a *LoadAd) CanPublish() bool {
 // Only the facts a reader would use to recognise a repeat are included: the
 // corridor, the tonnage, the body, the loading day, the money and the phone
 // number.
+//
+// Meaning is only a safe key when there is enough of it. Two adverts the parser
+// could not place would otherwise digest to the same empty facts and block each
+// other as duplicates, so an advert whose corridor or phone was not found is
+// keyed by its text instead.
 func (a *LoadAd) ComputeFingerprint() string {
-	parts := []string{
-		placeKey(a.OriginCityID, a.OriginRegionID, a.OriginText),
-		placeKey(a.DestCityID, a.DestRegionID, a.DestText),
-		optionalInt(a.WeightKg),
-		normalise(stringOrEmpty(a.VehicleType)),
-		dateKey(a.LoadingDate),
-		optionalInt64(a.PriceAmount) + normalise(stringOrEmpty(a.PriceCurrency)),
-		digitsOnly(stringOrEmpty(a.ContactPhone)),
+	var parts []string
+	if a.HasText() && len(a.MissingFields()) > 0 {
+		parts = []string{"text", normalise(a.RawText)}
+	} else {
+		parts = []string{
+			placeKey(a.OriginCityID, a.OriginRegionID, a.OriginText),
+			placeKey(a.DestCityID, a.DestRegionID, a.DestText),
+			optionalInt(a.WeightKg),
+			normalise(stringOrEmpty(a.VehicleType)),
+			dateKey(a.LoadingDate),
+			optionalInt64(a.PriceAmount) + normalise(stringOrEmpty(a.PriceCurrency)),
+			digitsOnly(stringOrEmpty(a.ContactPhone)),
+		}
 	}
 	sum := sha256.Sum256([]byte(strings.Join(parts, "|")))
 	return hex.EncodeToString(sum[:])

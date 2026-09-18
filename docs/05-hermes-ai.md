@@ -10,6 +10,9 @@ guruhlarni deterministik ball tanlaydi.
 ## Qayerda ishlatiladi
 
 Hozircha bitta joyda: **e’lon matnini o‘qish**, va u yerda ham faqat zarur bo‘lsa.
+O‘qish natijasi faqat guruhlarni tanlash va takrorni tanish uchun kerak:
+guruhlarga logist yozgan matn **o‘zgarishsiz** yuboriladi, model esa hech qachon
+matn yozmaydi va uni tahrirlamaydi.
 
 ```mermaid
 flowchart TD
@@ -29,8 +32,14 @@ flowchart TD
   tashlanadi; shahar/viloyat nomi platforma lug‘atida topilishi shart; raqam,
   narx, sana va telefonni model emas, o‘sha qoida qayta hisoblaydi. Model
   qoida topgan qiymatni hech qachon almashtirmaydi.
-- Har bir maydon manbasi (`rule`/`ai`) va dalili saqlanadi va interfeysda
-  ko‘rsatiladi — foydalanuvchi xato o‘qishni saqlashdan oldin ko‘radi.
+- Har bir maydon manbasi (`rule`/`ai`) va dalili saqlanadi. Xato o‘qish
+  eng yomoni guruh tanlovini buzadi (masalan, e’lon yo‘nalishsiz qolib, faqat
+  hamma narsani qabul qiladigan guruhlarga taklif qilinadi), lekin matnga
+  ta’sir qilmaydi. Preview har bir guruh sababini ko‘rsatadi va logist
+  yubormasdan oldin ro‘yxatni toraytira oladi.
+- Yo‘nalish yoki telefon topilmasa, takror tekshiruvi (fingerprint) ma’no
+  bo‘yicha emas, normallashtirilgan matn bo‘yicha ishlaydi — o‘qilmagan ikki
+  xil e’lon bir-birini "takror" deb to‘smasligi uchun.
 
 ## Guruhlarni tanlash (AI cost control)
 

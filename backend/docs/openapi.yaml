@@ -747,13 +747,20 @@ paths:
                         items: { $ref: "#/components/schemas/LoadAd" }
     post:
       tags: [Load adverts]
-      summary: Store an advert a person confirmed
+      summary: Store an advert
       description: |
-        Almost every field is optional, because an advert that omits the volume
-        or the cargo type is normal and requiring a value would only invite an
-        invented one. What is required is what a group needs to act on the post:
-        where from, where to, and someone to call. An advert missing any of them
-        is stored as a draft rather than refused.
+        The usual request is the text alone: `{"raw_text": "..."}`. That text
+        is what the groups receive, exactly as written. The server reads it to
+        decide which groups the advert belongs in and to recognise repeats,
+        and keeps what it understood beside the text, but never changes the
+        text itself. A reading may consume the plan's AI allowance when the
+        rules alone cannot place the advert.
+
+        A client may instead send the fields it has decided, with or without a
+        text; fields are then taken as given and nothing is read. An advert
+        with no text has its message composed from the fields, so it needs an
+        origin, a destination and a phone number, and is stored as a draft
+        until it has them.
 
         Every stored advert counts against the plan's monthly "loads"
         allowance, archived or not, so archiving does not hand it back.
@@ -802,8 +809,10 @@ paths:
       tags: [Load adverts]
       summary: Edit an advert
       description: |
-        An advert that has already been posted stays published: editing it
-        changes what the next run sends, never what the groups already received.
+        Same body as creating one: the text alone is read again, fields are
+        taken as given. An advert that has already been posted stays
+        published: editing it changes what the next run sends, never what the
+        groups already received.
       security:
         - bearerAuth: []
       requestBody:
@@ -1762,7 +1771,10 @@ components:
         missing:
           type: array
           items: { type: string }
-          description: What the advert still needs before it can be posted.
+          description: |
+            The origin, destination or phone number the reading did not find.
+            They no longer stop an advert with text from being posted; they
+            only narrow where it can be matched.
           example: [contact_phone]
         dropped:
           type: array
@@ -1826,20 +1838,25 @@ components:
               enum: [draft, ready, publishing, published, archived]
               description: |
                 Derived from the content rather than set by the client: an
-                advert carrying an origin, a destination and a phone number is
-                ready, anything less is a draft.
+                advert with text is ready, and so is one without text that
+                carries an origin, a destination and a phone number. Anything
+                less is a draft.
             origin: { $ref: "#/components/schemas/PlaceRef" }
             destination: { $ref: "#/components/schemas/PlaceRef" }
             missing:
               type: array
               items: { type: string }
-              description: Recomputed on read, never stored stale.
+              description: |
+                What stops the advert from being posted, recomputed on read.
+                Always empty for an advert with text.
             fingerprint:
               type: string
               description: |
                 Digest of what the advert means rather than how it was written,
                 so the same offer retyped is recognised as a repeat by the
-                duplicate check.
+                duplicate check. When the reading did not find the corridor and
+                a phone number, the digest is of the text instead, so two
+                adverts nothing was read from are not mistaken for each other.
             published_at: { type: string, format: date-time, nullable: true }
             created_at: { type: string, format: date-time }
             updated_at: { type: string, format: date-time }

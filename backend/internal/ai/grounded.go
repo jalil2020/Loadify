@@ -94,7 +94,7 @@ func (p *GroundedParser) Parse(ctx context.Context, text string) (domain.AdDraft
 	draft.AIUsed = true
 	draft.AIStatus = domain.AIStatusUsed
 	draft.Ad.Fingerprint = draft.Ad.ComputeFingerprint()
-	draft.Missing = draft.Ad.MissingForPublish()
+	draft.Missing = draft.Ad.MissingFields()
 	return draft, nil
 }
 

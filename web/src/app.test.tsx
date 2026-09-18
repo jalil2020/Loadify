@@ -3,10 +3,12 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { uz } from "./i18n/uz";
 
-// The whole signed-in path against a fake API: dashboard, adverts, reading an
+// The whole signed-in path against a fake API: dashboard, adverts, writing an
 // advert, saving it, reviewing the groups and publishing.
 
 const AD_ID = "ad-1";
+// Written the way people post in the groups: an emoji, lines, a phone number.
+const AD_TEXT = "🚛 Toshkent → Moskva\n20 tonna tent, ertaga yuklash\nTel: +998 90 123 45 67";
 const user = {
   id: "u-1",
   phone: "+998901234567",
@@ -24,7 +26,7 @@ const user = {
 const ad = {
   id: AD_ID,
   status: "ready",
-  raw_text: "Toshkentdan Moskvaga 20 tonna tent",
+  raw_text: AD_TEXT,
   origin: { country: "UZ", text: "Toshkentdan" },
   destination: { country: "RU", text: "Moskvaga" },
   weight_kg: 20000,
@@ -96,29 +98,6 @@ async function fakeApi(input: RequestInfo | URL, init?: RequestInit): Promise<Re
         { id: "1", code: "UZ", name: "O‘zbekiston" },
         { id: "2", code: "RU", name: "Rossiya" },
       ]);
-    case "POST /load-ads/parse":
-      return reply({
-        fields: {
-          origin: { value: { country: "UZ", text: "Toshkentdan" }, source: "rule", evidence: "Toshkentdan" },
-          weight_kg: { value: 20000, source: "rule", evidence: "20 tonna" },
-        },
-        missing: [],
-        dropped: ["shoshilinch"],
-        ai_used: false,
-        ai_status: "off",
-        draft: {
-          raw_text: body.text,
-          origin_country: "UZ",
-          origin_text: "Toshkentdan",
-          destination_country: "RU",
-          destination_text: "Moskvaga",
-          weight_kg: 20000,
-          vehicle_type: "tent",
-          price_amount: 250000,
-          price_currency: "USD",
-          contact_phone: "+998901234567",
-        },
-      });
     case "POST /load-ads":
       return reply(ad, 201);
     case `GET /load-ads/${AD_ID}`:
@@ -135,7 +114,7 @@ async function fakeApi(input: RequestInfo | URL, init?: RequestInit): Promise<Re
         candidates: 2,
         approved: [{ group_id: "g-1", title: "Toshkent - Moskva yuklar", score: 55, reasons: ["route_country", "vehicle_listed"] }],
         skipped: [{ group_id: "g-2", title: "Fura bor", reason: "cooldown", retry_after_seconds: 1800 }],
-        message_preview: "Toshkentdan → Moskvaga\n20 t · tent",
+        message_preview: AD_TEXT,
         preview_token: "tok-1",
         expires_at: new Date(Date.now() + 600_000).toISOString(),
         posts_left: 80,
@@ -171,29 +150,30 @@ describe("signed-in flow", () => {
     expect(screen.getByText(uz["reason.cooldown"])).toBeTruthy();
     expect(screen.getByRole("link", { name: /Bildirishnomalar \(2\)/ })).toBeTruthy();
 
-    // Adverts list
+    // Adverts list: each advert is its first line
     fireEvent.click(screen.getAllByRole("link", { name: uz["nav.ads"] })[0]!);
-    expect(await screen.findByText("Toshkentdan → Moskvaga")).toBeTruthy();
-    expect(screen.getByText("2 500 USD")).toBeTruthy();
+    expect(await screen.findByRole("link", { name: "🚛 Toshkent → Moskva" })).toBeTruthy();
 
-    // New advert: read the text, check provenance, save
+    // New advert: only the text, and an empty one is not saved
     fireEvent.click(screen.getAllByRole("link", { name: uz["ads.new"] })[0]!);
     const text = await screen.findByLabelText(uz["ed.textLabel"]);
-    fireEvent.change(text, { target: { value: "Toshkentdan Moskvaga 20 tonna tent shoshilinch" } });
-    fireEvent.click(screen.getByRole("button", { name: uz["ed.read"] }));
-    expect(await screen.findByText(uz["ed.review"])).toBeTruthy();
-    expect(screen.getByText("shoshilinch")).toBeTruthy();
-    expect(screen.getAllByText(new RegExp(uz["ed.source.rule"])).length).toBeGreaterThan(0);
-    expect((screen.getByLabelText(uz["field.contact_phone"], { exact: false }) as HTMLInputElement).value).toBe(
-      "+998901234567",
-    );
+    expect(screen.queryByRole("combobox")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: uz["common.save"] }));
+    expect(await screen.findByText(uz["ed.textRequired"])).toBeTruthy();
 
+    // Sent exactly as typed, spaces and lines included, and nothing else
+    const typed = `  ${AD_TEXT}\n`;
+    fireEvent.change(text, { target: { value: typed } });
     fireEvent.click(screen.getByRole("button", { name: uz["common.save"] }));
     await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/load-ads")).toBe(true));
-    const saved = calls.find((c) => c.method === "POST" && c.path === "/load-ads")!.body as Record<string, unknown>;
-    expect(saved).toMatchObject({ weight_kg: 20000, price_amount: 250000, origin_country: "UZ", destination_text: "Moskvaga" });
+    const saved = calls.find((c) => c.method === "POST" && c.path === "/load-ads")!.body;
+    expect(saved).toEqual({ raw_text: typed });
+    expect(calls.some((c) => c.path === "/load-ads/parse")).toBe(false);
 
-    // Detail: review and publish
+    // Detail: the text as it will be posted, then review and publish
+    expect(await screen.findByText(uz["ad.text"])).toBeTruthy();
+    const shown = (el: Element | null) => el?.tagName === "P" && el.textContent === AD_TEXT;
+    expect(screen.getByText((_, el) => shown(el))).toBeTruthy();
     const review = await screen.findByRole("button", { name: uz["pub.review"] });
     fireEvent.click(review);
     expect(await screen.findByText("Toshkent - Moskva yuklar")).toBeTruthy();
@@ -201,6 +181,8 @@ describe("signed-in flow", () => {
     expect(screen.getByText(/30 daq\./)).toBeTruthy();
     expect(screen.getByText(uz["match.vehicle_listed"])).toBeTruthy();
     expect(screen.getByText("Bu oy yana 80 ta post yuborish mumkin")).toBeTruthy();
+    const preview = screen.getByText((_, el) => el?.tagName === "PRE" && el.textContent === AD_TEXT);
+    expect(preview).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "1 ta guruhga yuborish" }));
     expect(await screen.findByText("1 ta post navbatga qo‘yildi")).toBeTruthy();

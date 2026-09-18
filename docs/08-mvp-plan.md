@@ -7,7 +7,7 @@ Holat: 2026-yil sentyabr, `feat/telegram-distribution` branch.
 | # | Imkoniyat | Holati | Qanday tekshirilgan |
 |---|---|---|---|
 | 1 | Ro‘yxatdan o‘tish / kirish | ✅ Telefon + parol, SMS’siz (sozlanadi) | Unit, web test, lokal API |
-| 2 | E’lon yaratish | ✅ | Unit, web test, lokal API |
+| 2 | E’lon yaratish | ✅ Faqat matn; guruhlarga o‘zgarishsiz ketadi | Unit, web test, lokal API (bayt-bayt taqqoslangan) |
 | 3 | E’lonni AI bilan o‘qish | ✅ Qoidalar + grounded model | Unit (soxta model); **haqiqiy LLM/Hermes bilan sinalmagan** |
 | 4 | Telegram guruh ulash | ✅ Kod tayyor | Unit (soxta Telegram); **haqiqiy Telegram bilan sinalmagan** |
 | 5 | Guruh qoidalari | ✅ | Unit, web, lokal API |

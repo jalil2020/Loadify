@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -62,6 +63,101 @@ func TestTheMonthlyAdvertAllowanceIsEnforced(t *testing.T) {
 	_, err := u.Create(context.Background(), userID, companyID, req)
 	if !apperror.Is(err, apperror.ErrQuotaExceeded.Code) {
 		t.Fatalf("second advert: err = %v, want the plan limit", err)
+	}
+}
+
+// routeParser reads every advert as Tashkent to Moscow with a phone, and counts
+// how often it was asked.
+type routeParser struct{ calls int }
+
+func (p *routeParser) Parse(context.Context, string) (domain.AdDraft, error) {
+	p.calls++
+	draft := domain.AdDraft{Ad: domain.LoadAd{
+		RawText: "rewritten by the parser", OriginText: "Toshkent", DestText: "Moskva",
+		OriginCountry: pointer("UZ"), DestCountry: pointer("RU"), ContactPhone: pointer("+998901234567"),
+	}}
+	draft.Note(domain.FieldOrigin, domain.FieldFromRule, "Toshkent")
+	return draft, nil
+}
+
+// failingParser cannot read anything.
+type failingParser struct{}
+
+func (failingParser) Parse(context.Context, string) (domain.AdDraft, error) {
+	return domain.AdDraft{}, errors.New("vocabulary unavailable")
+}
+
+func newAdUsecase(parser domain.LoadAdParser) (*LoadAdUsecase, *fakeAdRepo) {
+	ads := &fakeAdRepo{ads: map[uuid.UUID]*domain.LoadAd{}}
+	return NewLoadAdUsecase(ads, parser, nil, &fakePosting{}, sameTx{}, noopAudit{}, logger.New("test", "error")), ads
+}
+
+// Saving only the text reads it on the server: the reading is kept for
+// matching, and the text is stored exactly as the person wrote it.
+func TestSavingTextReadsItAndKeepsItAsWritten(t *testing.T) {
+	parser := &routeParser{}
+	u, ads := newAdUsecase(parser)
+	text := "  Toshkent - Moskva, 20t tent\nTel 90 123 45 67 "
+
+	res, err := u.Create(context.Background(), uuid.New(), uuid.New(), dto.SaveLoadAdRequest{RawText: text})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if parser.calls != 1 {
+		t.Fatalf("parser asked %d times, want once", parser.calls)
+	}
+	stored := ads.ads[res.ID]
+	if stored.RawText != text {
+		t.Errorf("stored text = %q, want it exactly as written %q", stored.RawText, text)
+	}
+	if stored.OriginText != "Toshkent" || stored.DestCountry == nil || *stored.DestCountry != "RU" {
+		t.Errorf("the reading was not kept: origin %q, destination country %v", stored.OriginText, stored.DestCountry)
+	}
+	if stored.FieldSources[domain.FieldOrigin].Source != domain.FieldFromRule {
+		t.Errorf("origin source = %+v, want the rule that read it", stored.FieldSources[domain.FieldOrigin])
+	}
+	if stored.Status != domain.LoadAdReady || len(res.Missing) != 0 {
+		t.Errorf("status %q with missing %v, want ready with nothing missing", stored.Status, res.Missing)
+	}
+	// Clients read its length: nothing missing is an empty list, never null.
+	if res.Missing == nil {
+		t.Error("missing is nil, which goes over the wire as null")
+	}
+	if stored.Fingerprint != stored.ComputeFingerprint() {
+		t.Error("the fingerprint does not describe what was stored")
+	}
+}
+
+// A client that sends fields has decided them; the server does not second-guess
+// them with a reading of its own.
+func TestFieldsFromTheClientAreNotReadAgain(t *testing.T) {
+	parser := &routeParser{}
+	u, ads := newAdUsecase(parser)
+
+	res, err := u.Create(context.Background(), uuid.New(), uuid.New(), dto.SaveLoadAdRequest{
+		RawText: "Samarqand - Almaty", OriginText: "Samarqand", DestText: "Almaty",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if parser.calls != 0 {
+		t.Errorf("parser asked %d times for an advert that came with fields", parser.calls)
+	}
+	if got := ads.ads[res.ID].OriginText; got != "Samarqand" {
+		t.Errorf("origin = %q, want the client's", got)
+	}
+}
+
+// A reading that fails costs the advert its route, not the save.
+func TestAnAdvertIsSavedWhenTheTextCannotBeRead(t *testing.T) {
+	u, ads := newAdUsecase(failingParser{})
+
+	res, err := u.Create(context.Background(), uuid.New(), uuid.New(), dto.SaveLoadAdRequest{RawText: "Yuk bor"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if got := ads.ads[res.ID]; got.RawText != "Yuk bor" || got.Status != domain.LoadAdReady {
+		t.Errorf("stored %q as %q, want the text, ready to post", got.RawText, got.Status)
 	}
 }
 

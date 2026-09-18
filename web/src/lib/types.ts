@@ -62,12 +62,6 @@ export interface Region {
   name: string;
 }
 
-export interface City {
-  id: UUID;
-  region_id: UUID;
-  name: string;
-}
-
 export interface VehicleType {
   code: string;
   name: string;
@@ -142,23 +136,6 @@ export interface SaveLoadAd {
   contact_phone?: string | null;
   contact_name?: string | null;
   notes?: string | null;
-}
-
-export interface ParsedField {
-  value: unknown;
-  source?: string;
-  evidence?: string;
-}
-
-export type AIStatus = "off" | "not_needed" | "used" | "no_result" | "limited" | "unavailable";
-
-export interface ParsedAdvert {
-  fields: Record<string, ParsedField>;
-  missing: string[];
-  dropped: string[];
-  ai_used: boolean;
-  ai_status: AIStatus;
-  draft: SaveLoadAd;
 }
 
 // ── distribution ────────────────────────────────────────────────────

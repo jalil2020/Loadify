@@ -1,71 +1,17 @@
 import { Archive, ArrowLeft, Pencil } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useErrorText, useToast } from "../../components/feedback";
 import { AdStatusBadge, JobStatusBadge } from "../../components/status";
-import { Button, Card, ConfirmDialog, ErrorState, LinkButton, Notice, PageHeader, Spinner } from "../../components/ui";
+import { Button, Card, ConfirmDialog, ErrorState, LinkButton, PageHeader, Spinner } from "../../components/ui";
 import { useI18n } from "../../i18n";
 import { useAuth } from "../../lib/auth";
-import { formatDate, formatMoney, formatWeight, formatWhen } from "../../lib/format";
-import { useAd, useAdPosts, useArchiveAd, useCancelJob, useCargoTypes, useVehicleTypes } from "../../lib/queries";
-import type { LoadAd, PostingJob } from "../../lib/types";
-import { routeLabel } from "./adForm";
+import { formatWhen } from "../../lib/format";
+import { useAd, useAdPosts, useArchiveAd, useCancelJob } from "../../lib/queries";
+import type { PostingJob } from "../../lib/types";
+import { adTitle } from "./adText";
 import { PublishPanel } from "./PublishPanel";
-import { fieldText, reasonText } from "../../lib/labels";
-
-function Row({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-0.5 py-2 sm:flex-row sm:gap-4">
-      <dt className="text-sm text-muted sm:w-44 sm:shrink-0">{label}</dt>
-      <dd className="text-sm text-ink">{children || "—"}</dd>
-    </div>
-  );
-}
-
-function Details({ ad }: { ad: LoadAd }) {
-  const { t } = useI18n();
-  const vehicles = useVehicleTypes();
-  const cargoTypes = useCargoTypes();
-  const vehicle = vehicles.data?.find((v) => v.code === ad.vehicle_type)?.name ?? ad.vehicle_type;
-  const cargo = cargoTypes.data?.find((c) => c.id === ad.cargo_type_id)?.name;
-  const payment = [
-    ad.payment_terms && t(`pay.${ad.payment_terms}` as "pay.on_loading"),
-    ad.payment_method && t(`pm.${ad.payment_method}` as "pm.cash"),
-  ]
-    .filter(Boolean)
-    .join(" · ");
-
-  return (
-    <dl className="divide-y divide-line">
-      <Row label={t("field.origin")}>{ad.origin.text || ad.origin.country}</Row>
-      <Row label={t("field.destination")}>{ad.destination.text || ad.destination.country}</Row>
-      <Row label={t("field.loading_date")}>
-        {ad.loading_date ? formatDate(ad.loading_date) : ad.loading_date_text}
-      </Row>
-      <Row label={t("field.weight_kg")}>{ad.weight_kg ? formatWeight(ad.weight_kg) : null}</Row>
-      <Row label={t("field.volume_m3")}>{ad.volume_m3 ? `${ad.volume_m3} m³` : null}</Row>
-      <Row label={t("field.vehicle_type")}>{vehicle}</Row>
-      <Row label={t("field.cargo_type")}>{[cargo, ad.cargo_text].filter(Boolean).join(" · ")}</Row>
-      <Row label={t("field.price")}>
-        {ad.price_amount !== null && ad.price_amount !== undefined
-          ? `${formatMoney(ad.price_amount, ad.price_currency)}${ad.price_negotiable ? ` · ${t("field.negotiable")}` : ""}`
-          : ad.price_negotiable
-            ? t("field.negotiable")
-            : null}
-      </Row>
-      <Row label={t("field.payment_terms")}>{payment}</Row>
-      <Row label={t("field.contact_phone")}>
-        {ad.contact_phone && (
-          <a href={`tel:${ad.contact_phone}`} className="text-brand hover:underline">
-            {ad.contact_phone}
-          </a>
-        )}
-        {ad.contact_name && ` · ${ad.contact_name}`}
-      </Row>
-      <Row label={t("field.notes")}>{ad.notes}</Row>
-    </dl>
-  );
-}
+import { reasonText } from "../../lib/labels";
 
 function Posts({ adId }: { adId: string }) {
   const { t } = useI18n();
@@ -156,7 +102,7 @@ export function AdDetailPage() {
       <PageHeader
         title={
           <span className="flex flex-wrap items-center gap-3">
-            {routeLabel(data)}
+            <span className="min-w-0 break-words">{adTitle(data)}</span>
             <AdStatusBadge status={data.status} />
           </span>
         }
@@ -185,28 +131,16 @@ export function AdDetailPage() {
         }
       />
 
-      <div className="flex flex-col gap-6">
-        {data.missing.length > 0 && !archived && (
-          <Notice tone="warn">
-            {t("ad.notReady", { fields: data.missing.map((f) => fieldText(f, t)).join(", ") })}
-          </Notice>
-        )}
-
-        <div className="grid gap-6 lg:grid-cols-5">
-          <div className="flex flex-col gap-6 lg:col-span-3">
-            {!archived && can("load_ads.publish") && <PublishPanel ad={data} />}
-            {can("posting.view") && <Posts adId={data.id} />}
-          </div>
-          <div className="flex flex-col gap-6 lg:col-span-2">
-            <Card title={t("ad.details")}>
-              <Details ad={data} />
-            </Card>
-            {data.raw_text && (
-              <Card title={t("ad.rawText")}>
-                <p className="text-sm whitespace-pre-wrap text-ink-soft">{data.raw_text}</p>
-              </Card>
-            )}
-          </div>
+      <div className="grid gap-6 lg:grid-cols-5">
+        {/* The text comes first on a phone: it is what the person is about to send. */}
+        <div className="lg:order-last lg:col-span-2">
+          <Card title={t("ad.text")}>
+            <p className="text-sm break-words whitespace-pre-wrap text-ink">{data.raw_text || "—"}</p>
+          </Card>
+        </div>
+        <div className="flex flex-col gap-6 lg:col-span-3">
+          {!archived && can("load_ads.publish") && <PublishPanel ad={data} />}
+          {can("posting.view") && <Posts adId={data.id} />}
         </div>
       </div>
 

@@ -123,7 +123,7 @@ func (u *PublishUsecase) Preview(
 		Candidates:     len(candidates),
 		Approved:       []dto.GroupDecision{},
 		Skipped:        []dto.GroupDecision{},
-		MessagePreview: renderAd(ad, previewLanguage(ranked.Ranked)),
+		MessagePreview: messageFor(ad, previewLanguage(ranked.Ranked)),
 		ExpiresAt:      now.Add(previewTTL),
 	}
 
@@ -438,7 +438,7 @@ func (u *PublishUsecase) buildJobs(
 			AccountID:     accountID,
 			GroupID:       group.ID,
 			Fingerprint:   ad.Fingerprint,
-			MessageText:   renderAd(ad, group.Language),
+			MessageText:   messageFor(ad, group.Language),
 			Status:        domain.PostingPending,
 			RandomID:      randomID,
 			NextAttemptAt: now,

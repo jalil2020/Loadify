@@ -59,34 +59,6 @@ export function formatDuration(seconds: number, lang: "uz" | "ru"): string {
   return m ? `${h} ${units.h} ${m} ${units.m}` : `${h} ${units.h}`;
 }
 
-/** Amounts travel in minor units; 250000 USD is 2 500 USD. */
-export function formatMoney(minor: number | null | undefined, currency: string | null | undefined): string {
-  if (minor === null || minor === undefined) return "—";
-  const major = minor / 100;
-  const text = Number.isInteger(major)
-    ? numberFormat.format(major)
-    : new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(major);
-  return currency ? `${text} ${currency}` : text;
-}
-
-export function toMinor(major: number): number {
-  return Math.round(major * 100);
-}
-
-export function fromMinor(minor: number | null | undefined): number | null {
-  return minor === null || minor === undefined ? null : minor / 100;
-}
-
-/** 20 000 kg reads better as 20 t. */
-export function formatWeight(kg: number | null | undefined): string {
-  if (kg === null || kg === undefined) return "—";
-  if (kg >= 1000) {
-    const t = kg / 1000;
-    return `${Number.isInteger(t) ? t : t.toFixed(1)} t`;
-  }
-  return `${numberFormat.format(kg)} kg`;
-}
-
 export function formatPercent(ratio: number | null | undefined): string {
   if (ratio === null || ratio === undefined) return "—";
   return `${Math.round(ratio * 100)}%`;

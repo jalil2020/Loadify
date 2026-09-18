@@ -3,12 +3,10 @@ import { useI18n } from "../i18n";
 import { api } from "./api";
 import type {
   CargoType,
-  City,
   Country,
   Dashboard,
   LoadAd,
   Notification,
-  ParsedAdvert,
   PostingJob,
   PublishPreview,
   PublishResult,
@@ -60,16 +58,6 @@ export function useRegions(country: string | null | undefined) {
     queryKey: keys.ref("regions", country ?? "", lang),
     queryFn: () => api.get<Region[]>("/reference/regions", { country }),
     enabled: Boolean(country),
-    staleTime: REF_STALE,
-  });
-}
-
-export function useCities(regionId: UUID | null | undefined) {
-  const { lang } = useI18n();
-  return useQuery({
-    queryKey: keys.ref("cities", regionId ?? "", lang),
-    queryFn: () => api.get<City[]>("/reference/cities", { region_id: regionId }),
-    enabled: Boolean(regionId),
     staleTime: REF_STALE,
   });
 }
@@ -135,12 +123,6 @@ export function useAd(id: UUID | undefined) {
     queryKey: keys.ad(id ?? ""),
     queryFn: () => api.get<LoadAd>(`/load-ads/${id}`),
     enabled: Boolean(id),
-  });
-}
-
-export function useParseAd() {
-  return useMutation({
-    mutationFn: (text: string) => api.post<ParsedAdvert>("/load-ads/parse", { text }),
   });
 }
 

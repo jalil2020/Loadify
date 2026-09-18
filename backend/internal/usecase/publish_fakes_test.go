@@ -16,7 +16,17 @@ import (
 
 type fakeAdRepo struct{ ads map[uuid.UUID]*domain.LoadAd }
 
-func (f *fakeAdRepo) Create(context.Context, *domain.LoadAd) error { return nil }
+// Create keeps a copy, the way a database would, so a test can read back what
+// was stored rather than what the caller still holds.
+func (f *fakeAdRepo) Create(_ context.Context, ad *domain.LoadAd) error {
+	if ad.ID == uuid.Nil {
+		ad.ID = uuid.New()
+	}
+	stored := *ad
+	f.ads[ad.ID] = &stored
+	return nil
+}
+
 func (f *fakeAdRepo) Update(context.Context, *domain.LoadAd) error { return nil }
 
 func (f *fakeAdRepo) UpdateColumns(_ context.Context, _, id uuid.UUID, columns map[string]any) error {

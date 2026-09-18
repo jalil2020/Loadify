@@ -31,11 +31,10 @@ type Place struct {
 
 // AdDraft is the result of reading a written advertisement.
 //
-// It is a draft rather than a load: nothing is stored until a person has seen
-// what was understood. Sources says which rule or model produced each field and
-// which words it came from, Missing says what still has to be supplied before
-// the advert can be posted, and Dropped holds the words nothing understood —
-// surfaced rather than swallowed, so a misread is visible.
+// Sources says which rule or model produced each field and which words it came
+// from, Missing lists the required details the text did not yield, and Dropped
+// holds the words nothing understood — surfaced rather than swallowed, so a
+// misread is visible.
 type AdDraft struct {
 	Ad      LoadAd
 	Sources FieldSources

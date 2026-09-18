@@ -112,3 +112,49 @@ func TestMissingForPublish(t *testing.T) {
 		t.Error("an archived advertisement may not be published")
 	}
 }
+
+// The text is what the groups receive, so an advert with text is complete even
+// when the reading found nothing in it. The reading's gaps are still reported,
+// for matching, but they no longer stop a post.
+func TestAnAdvertWithTextNeedsNothingElse(t *testing.T) {
+	written := &LoadAd{RawText: "Yuk bor, qo‘ng‘iroq qiling"}
+	if got := written.MissingForPublish(); len(got) != 0 {
+		t.Errorf("MissingForPublish() = %v, want none for an advert with text", got)
+	}
+	if !written.CanPublish() {
+		t.Error("an advert with text may be published")
+	}
+	if got := written.MissingFields(); len(got) != len(RequiredForPublish) {
+		t.Errorf("MissingFields() = %v, want all of %v", got, RequiredForPublish)
+	}
+
+	blank := &LoadAd{RawText: "  \n\t "}
+	if blank.CanPublish() {
+		t.Error("blank text is not an advert")
+	}
+}
+
+// Two adverts nothing could be read from must not share a fingerprint, or the
+// second would be refused everywhere as a repeat of the first.
+func TestUnreadAdvertsAreKeyedByTheirText(t *testing.T) {
+	first := &LoadAd{RawText: "Yuk bor: 20 tonna, tent"}
+	second := &LoadAd{RawText: "Yuk bor: 10 tonna, ref"}
+	if first.ComputeFingerprint() == second.ComputeFingerprint() {
+		t.Error("two different unread adverts share a fingerprint")
+	}
+
+	retyped := &LoadAd{RawText: "  yuk bor:   20 TONNA, tent \n"}
+	if first.ComputeFingerprint() != retyped.ComputeFingerprint() {
+		t.Error("spacing and case changed the fingerprint of an unread advert")
+	}
+
+	// Once the reading found the corridor and the phone, the meaning is the key
+	// again, so the same offer in other words is still a repeat.
+	read := tashkentMoscow()
+	read.RawText = "Ташкент → Москва, тент 20 т"
+	reworded := tashkentMoscow()
+	reworded.RawText = "Toshkentdan Moskvaga 20 tonna tent"
+	if read.ComputeFingerprint() != reworded.ComputeFingerprint() {
+		t.Error("rewording a fully read advert changed its fingerprint")
+	}
+}

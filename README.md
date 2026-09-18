@@ -1,8 +1,10 @@
 # Loadify — Telegram yuk e’lonlarini mas’uliyat bilan tarqatish
 
-Logist yuk e’lonini **bir marta** oddiy matn bilan yozadi. Tizim uni o‘qiydi,
-unga mos Telegram guruhlarini tanlaydi, anti-spam limitlaridan o‘tkazadi va
-**logistning o‘z Telegram akkauntidan** navbat orqali, oralatib yuboradi. Har bir
+Logist yuk e’lonini **bir marta** oddiy matn bilan yozadi. Guruhlarga **aynan
+shu matn, o‘zgarishsiz** ketadi. Tizim matnni faqat ichkarida o‘qiydi — mos
+Telegram guruhlarini tanlash va takrorni tanish uchun — so‘ng anti-spam
+limitlaridan o‘tkazib, **logistning o‘z Telegram akkauntidan** navbat orqali,
+oralatib yuboradi. Har bir
 post uchun nima bo‘lgani — yuborildi, kutmoqda, o‘tkazib yuborildi yoki xato —
 sababi bilan yozib boriladi.
 

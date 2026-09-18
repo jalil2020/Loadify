@@ -6,11 +6,10 @@ import { AdStatusBadge } from "../../components/status";
 import { Card, Checkbox, EmptyState, ErrorState, Input, LinkButton, PageHeader, Pagination, Select, Skeleton } from "../../components/ui";
 import { useI18n, type MessageKey } from "../../i18n";
 import { useAuth } from "../../lib/auth";
-import { formatDate, formatMoney, formatWeight } from "../../lib/format";
-import { useAds, useVehicleTypes } from "../../lib/queries";
+import { formatDate } from "../../lib/format";
+import { useAds } from "../../lib/queries";
 import type { AdStatus } from "../../lib/types";
-import { routeLabel } from "./adForm";
-import { fieldText } from "../../lib/labels";
+import { adTitle } from "./adText";
 
 const STATUSES: AdStatus[] = ["draft", "ready", "publishing", "published", "archived"];
 
@@ -51,8 +50,6 @@ export function AdsPage() {
   }, [debounced]);
 
   const ads = useAds({ status: status || undefined, search: debounced || undefined, mine, page });
-  const vehicles = useVehicleTypes();
-  const vehicleName = (code?: string | null) => vehicles.data?.find((v) => v.code === code)?.name ?? code ?? "";
 
   return (
     <>
@@ -114,13 +111,10 @@ export function AdsPage() {
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] text-sm">
+              <table className="w-full min-w-[480px] text-sm">
                 <thead className="bg-sunken text-left text-xs font-medium tracking-wide text-muted uppercase">
                   <tr>
-                    <th className="px-4 py-2.5">{t("ads.col.route")}</th>
-                    <th className="px-4 py-2.5">{t("ads.col.cargo")}</th>
-                    <th className="px-4 py-2.5">{t("ads.col.date")}</th>
-                    <th className="px-4 py-2.5 text-right">{t("ads.col.price")}</th>
+                    <th className="px-4 py-2.5">{t("ads.col.text")}</th>
                     <th className="px-4 py-2.5">{t("ads.col.status")}</th>
                     <th className="px-4 py-2.5 text-right">{t("ads.col.created")}</th>
                   </tr>
@@ -132,28 +126,17 @@ export function AdsPage() {
                       onClick={() => navigate(`/ads/${ad.id}`)}
                       className="cursor-pointer hover:bg-sunken/60"
                     >
-                      <td className="px-4 py-3">
-                        <Link to={`/ads/${ad.id}`} className="font-medium text-ink hover:text-brand">
-                          {routeLabel(ad)}
+                      <td className="max-w-0 px-4 py-3">
+                        <Link to={`/ads/${ad.id}`} className="block truncate font-medium text-ink hover:text-brand">
+                          {adTitle(ad)}
                         </Link>
-                        {ad.missing.length > 0 && (
-                          <p className="text-xs text-warn">
-                            {t("ads.missing", { fields: ad.missing.map((f) => fieldText(f, t)).join(", ") })}
-                          </p>
-                        )}
                       </td>
-                      <td className="px-4 py-3 text-ink-soft">
-                        {[formatWeight(ad.weight_kg), vehicleName(ad.vehicle_type)].filter((s) => s && s !== "—").join(" · ") ||
-                          "—"}
-                      </td>
-                      <td className="px-4 py-3 text-ink-soft tabular">{formatDate(ad.loading_date)}</td>
-                      <td className="px-4 py-3 text-right text-ink-soft tabular">
-                        {formatMoney(ad.price_amount, ad.price_currency)}
-                      </td>
-                      <td className="px-4 py-3">
+                      <td className="w-px px-4 py-3 whitespace-nowrap">
                         <AdStatusBadge status={ad.status} />
                       </td>
-                      <td className="px-4 py-3 text-right text-muted tabular">{formatDate(ad.created_at)}</td>
+                      <td className="w-px px-4 py-3 text-right whitespace-nowrap text-muted tabular">
+                        {formatDate(ad.created_at)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

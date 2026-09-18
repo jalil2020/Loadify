@@ -123,3 +123,27 @@ func TestNegotiableWithoutAFigure(t *testing.T) {
 		t.Errorf("rendered:\n%s", got)
 	}
 }
+
+// What a person wrote reaches the group as written: no line is added, dropped,
+// reordered or translated, whatever the group's language.
+func TestAWrittenAdvertIsPostedVerbatim(t *testing.T) {
+	ad := fullAd()
+	ad.RawText = "  🚛 Toshkent → Moskva\n20 t, tent\n\nTel: +998 90 123 45 67  \n"
+	want := "🚛 Toshkent → Moskva\n20 t, tent\n\nTel: +998 90 123 45 67"
+
+	for _, language := range []string{"uz", "ru", "en", ""} {
+		if got := messageFor(ad, language); got != want {
+			t.Errorf("messageFor(%q) = %q, want the text as written %q", language, got, want)
+		}
+	}
+}
+
+// An advert that arrived as fields only has no words of its own, so its message
+// is composed.
+func TestAnAdvertWithoutTextIsComposed(t *testing.T) {
+	ad := fullAd()
+	ad.RawText = ""
+	if got, want := messageFor(ad, "ru"), renderAd(ad, "ru"); got != want {
+		t.Errorf("messageFor = %q, want the composed message %q", got, want)
+	}
+}

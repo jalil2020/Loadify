@@ -333,6 +333,46 @@ func TestAnIncompleteAdvertIsRefusedWithItsGaps(t *testing.T) {
 	}
 }
 
+// The groups receive the text the person wrote, and the preview shows exactly
+// that text before anything is queued.
+func TestTheWrittenTextIsWhatGetsQueued(t *testing.T) {
+	f := newFixture(t, 2)
+	text := "Toshkent → Moskva\n20 t tent, 16-sentabr\nTel: +998 90 123 45 67"
+	f.ads.ads[f.adID].RawText = text
+
+	preview := f.preview(t)
+	if preview.MessagePreview != text {
+		t.Errorf("preview = %q, want the text as written", preview.MessagePreview)
+	}
+
+	_, err := f.usecase.Publish(context.Background(), f.userID, f.companyID, f.adID, "key-1",
+		dto.PublishRequest{PreviewToken: preview.PreviewToken})
+	if err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if len(f.posting.jobs) != 2 {
+		t.Fatalf("%d jobs stored, want 2", len(f.posting.jobs))
+	}
+	for _, job := range f.posting.jobs {
+		if job.MessageText != text {
+			t.Errorf("job %s carries %q, want the text as written", job.ID, job.MessageText)
+		}
+	}
+}
+
+// An advert with text is not held back because the reading missed a detail:
+// the text, which carries it, is what goes out.
+func TestAnAdvertWithTextIsNotRefusedForUnreadDetails(t *testing.T) {
+	f := newFixture(t, 2)
+	ad := f.ads.ads[f.adID]
+	ad.RawText = "Yuk bor, batafsil telefonda: 90 123 45 67"
+	ad.ContactPhone = nil
+
+	if _, err := f.usecase.Preview(context.Background(), f.userID, f.companyID, f.adID, nil); err != nil {
+		t.Fatalf("Preview refused an advert with text: %v", err)
+	}
+}
+
 // ─── plan limits ────────────────────────────────────────────────────
 
 func TestThePreviewSaysHowManyPostsThePlanHasLeft(t *testing.T) {

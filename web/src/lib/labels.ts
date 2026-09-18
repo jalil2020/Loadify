@@ -47,23 +47,6 @@ export function matchText(code: string, t: Translate): string {
   return MATCHES.has(code) ? t(`match.${code}` as MessageKey) : code;
 }
 
-const FIELDS = new Set([
-  "origin",
-  "destination",
-  "cargo_type",
-  "weight_kg",
-  "volume_m3",
-  "vehicle_type",
-  "loading_date",
-  "price",
-  "payment_terms",
-  "contact_phone",
-]);
-
-export function fieldText(code: string, t: Translate): string {
-  return FIELDS.has(code) ? t(`field.${code}` as MessageKey) : code;
-}
-
 // ── errors ──────────────────────────────────────────────────────────
 
 const KNOWN_CODES = new Set([

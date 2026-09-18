@@ -82,7 +82,7 @@ func (p *AdParser) Parse(ctx context.Context, text string) (domain.AdDraft, erro
 
 	draft.Dropped = scan.Unclaimed()
 	draft.Ad.Fingerprint = draft.Ad.ComputeFingerprint()
-	draft.Missing = draft.Ad.MissingForPublish()
+	draft.Missing = draft.Ad.MissingFields()
 	return draft, nil
 }
 

@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -14,9 +15,10 @@ import (
 // LoadAdUsecase owns a freight advertisement from the moment someone types it
 // until it is ready to be distributed.
 //
-// Reading and storing are deliberately separate operations. Parse writes
-// nothing: a person sees what was understood, corrects it, and only then saves.
-// That gap is what keeps a misread from reaching a hundred groups.
+// The text a person writes is the advert: it is stored and posted exactly as
+// written. Reading it is only how the platform learns where the advert belongs,
+// which groups to offer it to and when a repeat is a repeat, so a misread can
+// cost a group choice but never puts words in the person's mouth.
 type LoadAdUsecase struct {
 	ads     domain.LoadAdRepository
 	parser  domain.LoadAdParser
@@ -58,13 +60,13 @@ func (u *LoadAdUsecase) Parse(
 	return parseResponse(draft), nil
 }
 
-// Create stores an advertisement a person has confirmed.
+// Create stores an advertisement.
 func (u *LoadAdUsecase) Create(
 	ctx context.Context,
 	userID, companyID uuid.UUID,
 	req dto.SaveLoadAdRequest,
 ) (*dto.LoadAdResponse, error) {
-	ad := adFromRequest(req)
+	ad := u.adFrom(ctx, userID, companyID, req)
 	ad.CompanyID = companyID
 	ad.CreatedByUserID = userID
 	ad.Status = statusFor(&ad)
@@ -95,7 +97,7 @@ func (u *LoadAdUsecase) Update(
 		return nil, apperror.ErrConflict.WithMessage("This advert is archived. Copy it into a new one to post it again.")
 	}
 
-	updated := adFromRequest(req)
+	updated := u.adFrom(ctx, userID, companyID, req)
 	updated.ID = existing.ID
 	updated.CompanyID = existing.CompanyID
 	updated.CreatedByUserID = existing.CreatedByUserID
@@ -176,6 +178,44 @@ func (u *LoadAdUsecase) Archive(ctx context.Context, userID, companyID, id uuid.
 	}
 	u.record(ctx, userID, "load_ad.archive", id, map[string]any{"cancelled_posts": stopped})
 	return nil
+}
+
+// adFrom builds the advert to store from what the client sent.
+//
+// A client that sends fields has decided them, and they are taken as given. A
+// client that sends only the text leaves the reading to the server: the text is
+// read here, silently, and what was understood is kept beside it for matching
+// and the duplicate check. The text itself is never altered.
+func (u *LoadAdUsecase) adFrom(
+	ctx context.Context,
+	userID, companyID uuid.UUID,
+	req dto.SaveLoadAdRequest,
+) domain.LoadAd {
+	if !textOnly(req) {
+		return adFromRequest(req)
+	}
+
+	ctx = domain.WithActor(ctx, domain.Actor{UserID: userID, CompanyID: companyID})
+	draft, err := u.parser.Parse(ctx, req.RawText)
+	if err != nil {
+		// A failed reading costs the advert its route, not its existence: kept
+		// as text, it still goes to the groups that take any advert.
+		u.log.Warn("advert text could not be read, storing it as written", logger.Err(err))
+		return adFromRequest(req)
+	}
+
+	ad := draft.Ad
+	ad.RawText = req.RawText
+	ad.FieldSources = draft.Sources
+	ad.Fingerprint = ad.ComputeFingerprint()
+	return ad
+}
+
+// textOnly reports whether the request is the text and nothing else.
+func textOnly(req dto.SaveLoadAdRequest) bool {
+	fields := req
+	fields.RawText = ""
+	return strings.TrimSpace(req.RawText) != "" && fields == dto.SaveLoadAdRequest{}
 }
 
 // statusFor decides whether a saved advert is ready to be distributed. It is

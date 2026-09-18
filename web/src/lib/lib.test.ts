@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { interpolate } from "../i18n/core";
 import { ru } from "../i18n/ru";
 import { uz } from "../i18n/uz";
-import { fromDraft, toRequest } from "../pages/ads/adForm";
+import { adTitle } from "../pages/ads/adText";
 import { ApiError, api, refreshSession, tokens } from "./api";
-import { formatDate, formatDuration, formatMoney, formatWeight, formatWhen } from "./format";
+import { formatDate, formatDuration, formatWhen } from "./format";
 import { describeError, normalizePhone, reasonText, UZ_PHONE } from "./labels";
 
 const t = (key: keyof typeof uz, vars?: Record<string, string | number>) => interpolate(uz[key], vars);
@@ -31,18 +31,6 @@ describe("format", () => {
 
   it("shows a calendar day as written", () => {
     expect(formatDate("2026-09-18")).toBe("18.09.2026");
-  });
-
-  it("reads minor units", () => {
-    expect(formatMoney(250000, "USD")).toBe("2 500 USD");
-    expect(formatMoney(12345, "UZS")).toBe("123,45 UZS");
-    expect(formatMoney(null, "USD")).toBe("—");
-  });
-
-  it("writes tonnes when it reads better", () => {
-    expect(formatWeight(20000)).toBe("20 t");
-    expect(formatWeight(1500)).toBe("1.5 t");
-    expect(formatWeight(800)).toBe("800 kg");
   });
 
   it("rounds waits into words", () => {
@@ -73,39 +61,20 @@ describe("labels", () => {
   });
 });
 
-describe("advert form", () => {
-  it("round-trips a parse draft into the request shape", () => {
-    const draft = {
-      origin_country: "UZ",
-      origin_city_id: "c1",
-      origin_region_id: "r1",
-      origin_text: "Toshkentdan",
-      destination_country: "RU",
-      destination_text: "Moskvaga",
-      weight_kg: 20000,
-      price_amount: 250000,
-      price_currency: "USD",
-      contact_phone: "+998901234567",
-    };
-    const request = toRequest(fromDraft(draft));
-    expect(request).toMatchObject({
-      origin_country: "UZ",
-      origin_city_id: "c1",
-      origin_region_id: "r1",
-      destination_country: "RU",
-      destination_region_id: null,
-      weight_kg: 20000,
-      price_amount: 250000,
-      price_currency: "USD",
-      contact_phone: "+998901234567",
-      vehicle_type: null,
-    });
+describe("advert title", () => {
+  const place = { origin: { text: "Toshkent" }, destination: { text: "Moskva" } };
+
+  it("is the first line people wrote", () => {
+    expect(adTitle({ ...place, raw_text: "\n  🚛 Toshkent → Moskva  \n20 t tent" })).toBe("🚛 Toshkent → Moskva");
   });
 
-  it("sends no currency without a price", () => {
-    const values = fromDraft({});
-    values.price_currency = "USD";
-    expect(toRequest(values)).toMatchObject({ price_amount: null, price_currency: null });
+  it("cuts long lines without splitting an emoji", () => {
+    const title = adTitle({ ...place, raw_text: "🚛".repeat(10) }, 5);
+    expect(title).toBe("🚛🚛🚛🚛…");
+  });
+
+  it("falls back to the route for an advert without text", () => {
+    expect(adTitle({ ...place, raw_text: "" })).toBe("Toshkent → Moskva");
   });
 });
 

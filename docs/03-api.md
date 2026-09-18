@@ -25,9 +25,9 @@ havolalarini tekshiradi). Bu yerda — qoidalar va asosiy endpointlar xaritasi.
 |---|---|---|
 | `POST /api/auth/register` | `POST /auth/register` | Telefon (login) + parol; standart holatda SMS’siz darhol sessiya |
 | `POST /api/auth/login` | `POST /auth/login` | |
-| `POST /api/loads` | `POST /load-ads/parse`, `POST /load-ads` | Avval o‘qish (hech narsa saqlanmaydi), keyin tasdiqlangan e’lonni saqlash |
+| `POST /api/loads` | `POST /load-ads` | Odatda faqat `raw_text`: server uni o‘qiydi (guruh tanlash uchun) va guruhlarga aynan shu matnni yuboradi. `POST /load-ads/parse` — o‘qishni saqlamasdan ko‘rish (API mijozlari uchun) |
 | `GET /api/loads` | `GET /load-ads` | `status`, `search`, `mine`, sahifalash |
-| `GET /api/loads/:id` | `GET /load-ads/{id}` | `missing` — tarqatish uchun yetishmayotgan maydonlar |
+| `GET /api/loads/:id` | `GET /load-ads/{id}` | Matnli e’londa `missing` doim bo‘sh; faqat maydonlar bilan (matnsiz) yaratilganda yo‘nalish va telefon talab qilinadi |
 | `DELETE /api/loads/:id` | `DELETE /load-ads/{id}` | Arxivlaydi va navbatdagi postlarni bekor qiladi |
 | `POST /api/loads/:id/publish` | `POST /load-ads/{id}/publish/preview` → `POST /load-ads/{id}/publish` | Ikki qadam: ko‘rib chiqish (hech narsa yubormaydi) va tasdiqlash (202) |
 | `GET /api/telegram/groups` | `GET /telegram/groups` | Qoidalar va yo‘nalishlar bilan |

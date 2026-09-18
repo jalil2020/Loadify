@@ -103,6 +103,12 @@ func requestFromAd(ad domain.LoadAd) dto.SaveLoadAdRequest {
 
 // adResponse renders a stored advertisement.
 func adResponse(ad *domain.LoadAd) dto.LoadAdResponse {
+	// Nothing missing is sent as [], which is what the contract promises and
+	// what a client reading its length expects.
+	missing := ad.MissingForPublish()
+	if missing == nil {
+		missing = []string{}
+	}
 	return dto.LoadAdResponse{
 		ID:        ad.ID,
 		CompanyID: ad.CompanyID,
@@ -135,7 +141,7 @@ func adResponse(ad *domain.LoadAd) dto.LoadAdResponse {
 		ContactPhone:    ad.ContactPhone,
 		ContactName:     ad.ContactName,
 		Notes:           ad.Notes,
-		Missing:         ad.MissingForPublish(),
+		Missing:         missing,
 		Fingerprint:     ad.Fingerprint,
 		PublishedAt:     ad.PublishedAt,
 		CreatedAt:       ad.CreatedAt,

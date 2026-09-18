@@ -82,12 +82,10 @@ sequenceDiagram
     participant PO as Poster
     participant T as Telegram
 
-    L->>W: e’lon matni
-    W->>A: POST /load-ads/parse
-    A-->>W: maydonlar + qaysi so‘zdan olingani
-    L->>W: tekshiradi, saqlaydi
-    W->>A: POST /load-ads
-    A->>P: load_ads (fingerprint, status)
+    L->>W: e’lon matni, "Saqlash"
+    W->>A: POST /load-ads {raw_text}
+    A->>A: matnni o‘qish (faqat moslash uchun, matn o‘zgarmaydi)
+    A->>P: load_ads (matn + o‘qilgani, fingerprint, status)
     L->>W: "Tarqatish"
     W->>A: POST /load-ads/{id}/publish/preview
     A->>P: SQL filtr (yo‘nalish, kuzov, yuk, og‘irlik)

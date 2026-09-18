@@ -40,7 +40,20 @@ var adLabels = map[string]map[string]string{
 	},
 }
 
-// renderAd writes the message that goes into a group.
+// messageFor is what a group receives for the advert.
+//
+// An advert a person wrote is posted exactly as they wrote it: the platform
+// decides where it goes, never what it says. Only the surrounding blank space is
+// dropped, which Telegram would drop anyway. An advert built from fields alone,
+// with no words of its own, has its message composed by renderAd.
+func messageFor(ad *domain.LoadAd, language string) string {
+	if ad.HasText() {
+		return strings.TrimSpace(ad.RawText)
+	}
+	return renderAd(ad, language)
+}
+
+// renderAd writes the message for an advert that has no text of its own.
 //
 // The same advert produces the same text for every group in a language: varying
 // it per group is how a duplicate check gets fooled, and fooling a duplicate

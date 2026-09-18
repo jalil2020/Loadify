@@ -13,68 +13,67 @@ import { AuthLayout } from "./AuthLayout";
 const PASSWORD = /^(?=.*[A-Za-z])(?=.*\d).{8,72}$/;
 
 const schema = z.object({
-  first_name: z.string().trim().min(2).max(100),
-  last_name: z.string().trim().min(2).max(100),
+  company: z.string().trim().min(2).max(255),
   phone: z.string().transform(normalizePhone).pipe(z.string().regex(UZ_PHONE)),
   password: z.string().regex(PASSWORD),
 });
 
 type Values = z.input<typeof schema>;
 
+/**
+ * Company name, phone and password, and the person is in. The phone number is
+ * the login. An SMS step appears only when the server is configured to ask
+ * for one.
+ */
 export function RegisterPage() {
   const { t, lang } = useI18n();
   const { register } = useAuth();
   const errorText = useErrorText();
   const [error, setError] = useState<string | null>(null);
-  const [phone, setPhone] = useState<string | null>(null);
+  const [verifyPhone, setVerifyPhone] = useState<string | null>(null);
   const form = useForm<Values, unknown, z.output<typeof schema>>({
     resolver: zodResolver(schema),
-    defaultValues: { first_name: "", last_name: "", phone: "+998", password: "" },
+    defaultValues: { company: "", phone: "+998", password: "" },
   });
   const errors = form.formState.errors;
 
   const submit = form.handleSubmit(async (values) => {
     setError(null);
     try {
-      await register({ ...values, locale: lang });
-      setPhone(values.phone);
+      const { verificationRequired } = await register({ ...values, locale: lang });
+      if (verificationRequired) setVerifyPhone(values.phone);
     } catch (err) {
       const byField = fieldErrors(err);
-      for (const [field, message] of Object.entries(byField)) {
-        if (field in values) form.setError(field as keyof Values, { message });
-      }
+      if (byField.phone) form.setError("phone", { message: byField.phone });
+      if (byField.password) form.setError("password", { message: byField.password });
       setError(errorText(err));
     }
   });
 
-  if (phone) return <VerifyStep phone={phone} onBack={() => setPhone(null)} />;
+  if (verifyPhone) return <VerifyStep phone={verifyPhone} onBack={() => setVerifyPhone(null)} />;
 
   return (
     <AuthLayout title={t("auth.register.title")} subtitle={t("auth.register.subtitle")}>
       <form onSubmit={submit} className="flex flex-col gap-4" noValidate>
         {error && <Notice tone="bad">{error}</Notice>}
-        <div className="grid grid-cols-2 gap-3">
-          <Field label={t("auth.firstName")} error={errors.first_name && t("form.tooShort")}>
-            {(id) => (
-              <Input id={id} autoComplete="given-name" invalid={!!errors.first_name} {...form.register("first_name")} />
-            )}
-          </Field>
-          <Field label={t("auth.lastName")} error={errors.last_name && t("form.tooShort")}>
-            {(id) => (
-              <Input id={id} autoComplete="family-name" invalid={!!errors.last_name} {...form.register("last_name")} />
-            )}
-          </Field>
-        </div>
-        <Field label={t("auth.phone")} error={errors.phone && t("form.phone")}>
+        <Field label={t("auth.companyName")} error={errors.company && t("form.tooShort")}>
           {(id) => (
-            <Input id={id} type="tel" inputMode="tel" autoComplete="tel" invalid={!!errors.phone} {...form.register("phone")} />
+            <Input id={id} autoComplete="organization" invalid={!!errors.company} {...form.register("company")} />
           )}
         </Field>
-        <Field
-          label={t("auth.password")}
-          hint={t("auth.passwordHint")}
-          error={errors.password && t("auth.passwordHint")}
-        >
+        <Field label={t("auth.phone")} hint={t("auth.phoneIsLogin")} error={errors.phone && t("form.phone")}>
+          {(id) => (
+            <Input
+              id={id}
+              type="tel"
+              inputMode="tel"
+              autoComplete="username"
+              invalid={!!errors.phone}
+              {...form.register("phone")}
+            />
+          )}
+        </Field>
+        <Field label={t("auth.password")} hint={t("auth.passwordHint")} error={errors.password && t("auth.passwordHint")}>
           {(id) => (
             <Input
               id={id}

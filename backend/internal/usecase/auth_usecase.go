@@ -101,8 +101,11 @@ func (u *AuthUsecase) Register(ctx context.Context, req dto.RegisterRequest, dev
 		}
 	}
 
-	if err := u.guardOTPRate(ctx, phone, domain.OTPPurposeRegister); err != nil {
-		return nil, err
+	verify := u.cfg.Security.RequirePhoneVerification
+	if verify {
+		if err := u.guardOTPRate(ctx, phone, domain.OTPPurposeRegister); err != nil {
+			return nil, err
+		}
 	}
 
 	passwordHash, err := u.hasher.Hash(req.Password)
@@ -133,6 +136,11 @@ func (u *AuthUsecase) Register(ctx context.Context, req dto.RegisterRequest, dev
 		Locale:       locale,
 		Status:       domain.UserStatusPendingVerification,
 	}
+	if !verify {
+		// Nothing to wait for: the account works at once. The number stays
+		// unconfirmed, which is what it is.
+		user.Status = domain.UserStatusActive
+	}
 	if req.Email != "" {
 		email := strings.ToLower(strings.TrimSpace(req.Email))
 		user.Email = &email
@@ -145,6 +153,9 @@ func (u *AuthUsecase) Register(ctx context.Context, req dto.RegisterRequest, dev
 		}
 		if err := u.roles.AssignRole(txCtx, user.ID, role.ID, nil, nil); err != nil {
 			return err
+		}
+		if !verify {
+			return nil
 		}
 		expiresAt, err := u.issueOTP(txCtx, phone, domain.OTPPurposeRegister, device.IPAddress, locale)
 		if err != nil {
@@ -167,12 +178,26 @@ func (u *AuthUsecase) Register(ctx context.Context, req dto.RegisterRequest, dev
 		UserAgent:    device.UserAgent,
 	})
 
+	if !verify {
+		auth, err := u.issueSession(ctx, user, device)
+		if err != nil {
+			return nil, err
+		}
+		return &dto.RegisterResponse{
+			UserID:  user.ID,
+			Phone:   phone,
+			Auth:    auth,
+			Message: "Registered",
+		}, nil
+	}
+
 	return &dto.RegisterResponse{
-		UserID:       user.ID,
-		Phone:        phone,
-		OTPExpiresAt: otpExpiresAt,
-		ResendAfter:  int(u.cfg.Security.OTPResendCooldown.Seconds()),
-		Message:      "Confirmation code sent",
+		UserID:               user.ID,
+		Phone:                phone,
+		VerificationRequired: true,
+		OTPExpiresAt:         &otpExpiresAt,
+		ResendAfter:          int(u.cfg.Security.OTPResendCooldown.Seconds()),
+		Message:              "Confirmation code sent",
 	}, nil
 }
 
@@ -302,7 +327,7 @@ func (u *AuthUsecase) Login(ctx context.Context, req dto.LoginRequest, device De
 		return nil, apperror.ErrInvalidCredentials
 	}
 
-	if !user.IsPhoneVerified() {
+	if u.cfg.Security.RequirePhoneVerification && !user.IsPhoneVerified() {
 		return nil, apperror.ErrPhoneNotVerified
 	}
 
@@ -320,6 +345,11 @@ func (u *AuthUsecase) Login(ctx context.Context, req dto.LoginRequest, device De
 		"last_login_at":         now,
 		"failed_login_attempts": 0,
 		"locked_until":          nil,
+	}
+	// Someone who registered while codes were required and never entered one
+	// is let in once codes are not: the account would otherwise be stuck.
+	if !u.cfg.Security.RequirePhoneVerification && user.Status == domain.UserStatusPendingVerification {
+		columns["status"] = domain.UserStatusActive
 	}
 	if device.IPAddress != "" {
 		columns["last_login_ip"] = device.IPAddress

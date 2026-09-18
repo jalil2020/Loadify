@@ -93,7 +93,15 @@ paths:
   /auth/register:
     post:
       tags: [Auth]
-      summary: Register and receive an SMS code
+      summary: Register with a phone number and a password
+      description: |
+        The phone number is the login. By default the account works at once:
+        the reply carries `auth` with a session and the person is signed in,
+        with the number recorded as unconfirmed.
+
+        A deployment that sets AUTH_REQUIRE_PHONE_VERIFICATION=true asks for an
+        SMS code instead: the reply has `verification_required: true`, no
+        session, and signing in waits for POST /auth/verify-otp.
       security: []
       requestBody:
         required: true
@@ -112,7 +120,27 @@ paths:
                   enum: [driver, company]
                 locale: { type: string, enum: [uz, ru, en] }
       responses:
-        "201": { $ref: "#/components/responses/Created" }
+        "201":
+          description: Registered
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          user_id: { type: string, format: uuid }
+                          phone: { type: string }
+                          verification_required: { type: boolean }
+                          auth:
+                            allOf:
+                              - $ref: "#/components/schemas/AuthResponse"
+                            description: Present when no SMS code is asked for.
+                          otp_expires_at: { type: string, format: date-time }
+                          resend_after_seconds: { type: integer }
         "409":
           description: The phone number is already registered
           content:

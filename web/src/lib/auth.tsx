@@ -6,10 +6,9 @@ import type { AuthResponse, Company, User } from "./types";
 type Status = "loading" | "anonymous" | "authenticated";
 
 export interface RegisterInput {
+  company: string;
   phone: string;
   password: string;
-  first_name: string;
-  last_name: string;
   locale: string;
 }
 
@@ -23,7 +22,8 @@ interface Auth {
   status: Status;
   user: User | null;
   login: (phone: string, password: string) => Promise<void>;
-  register: (input: RegisterInput) => Promise<void>;
+  /** Says whether an SMS code is still owed before the person is signed in. */
+  register: (input: RegisterInput) => Promise<{ verificationRequired: boolean }>;
   verify: (phone: string, code: string) => Promise<void>;
   resendCode: (phone: string) => Promise<void>;
   createCompany: (input: CompanyInput) => Promise<void>;
@@ -82,9 +82,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [signedIn],
   );
 
-  const register = useCallback(async (input: RegisterInput) => {
-    await api.post("/auth/register", { ...input, role: "company" }, { anonymous: true });
-  }, []);
+  // One step: the account, then its company, then a session that names the
+  // company. The session is only switched on at the end, so the person goes
+  // straight to the dashboard instead of passing through the company form.
+  const register = useCallback(
+    async (input: RegisterInput) => {
+      const res = await api.post<{ verification_required: boolean; auth?: AuthResponse }>(
+        "/auth/register",
+        { phone: input.phone, password: input.password, locale: input.locale, role: "company" },
+        { anonymous: true },
+      );
+      if (!res.auth) return { verificationRequired: true };
+
+      tokens.set(res.auth.tokens);
+      try {
+        await api.post<Company>("/companies", {
+          legal_name: input.company,
+          brand_name: input.company,
+          phone: input.phone,
+        });
+        await refreshSession();
+        queryClient.setQueryData(ME, await api.get<User>("/auth/me"));
+      } catch {
+        // The account exists either way; without a company the person lands
+        // on the company form and can try again from there.
+        queryClient.setQueryData(ME, res.auth.user);
+      }
+      setHasSession(true);
+      return { verificationRequired: false };
+    },
+    [queryClient],
+  );
 
   const verify = useCallback(
     async (phone: string, code: string) => {

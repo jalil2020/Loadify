@@ -119,8 +119,8 @@ export function AppShell() {
           <NavItems />
         </nav>
         <div className="border-t border-line px-2 pt-3">
-          <p className="truncate text-sm font-medium text-ink">{user?.full_name}</p>
-          <p className="truncate text-xs text-muted">{user?.phone}</p>
+          <p className="truncate text-sm font-medium text-ink">{user?.full_name.trim() || user?.phone}</p>
+          {user?.full_name.trim() && <p className="truncate text-xs text-muted">{user.phone}</p>}
           <button
             type="button"
             onClick={() => void logout()}

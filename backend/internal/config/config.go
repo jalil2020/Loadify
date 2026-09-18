@@ -96,6 +96,11 @@ type SecurityConfig struct {
 	LoginLockoutDuration time.Duration
 	PasswordResetTTL     time.Duration
 	TrustedProxies       []string
+	// RequirePhoneVerification makes registration wait for an SMS code before
+	// the account can sign in. Off, a person registers with a phone number and
+	// a password and is signed in at once; the number is recorded as
+	// unconfirmed.
+	RequirePhoneVerification bool
 }
 
 type S3Config struct {
@@ -326,6 +331,8 @@ func Load(envFiles ...string) (*Config, error) {
 			LoginLockoutDuration: getDuration("LOGIN_LOCKOUT_DURATION", 15*time.Minute),
 			PasswordResetTTL:     getDuration("PASSWORD_RESET_TTL", 30*time.Minute),
 			TrustedProxies:       getStringSlice("TRUSTED_PROXIES", nil),
+
+			RequirePhoneVerification: getBool("AUTH_REQUIRE_PHONE_VERIFICATION", false),
 		},
 		S3: S3Config{
 			Endpoint:  getString("S3_ENDPOINT", "http://localhost:9000"),

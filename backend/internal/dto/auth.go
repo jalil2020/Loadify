@@ -14,8 +14,8 @@ import (
 type RegisterRequest struct {
 	Phone     string `json:"phone" validate:"required,uzphone"`
 	Password  string `json:"password" validate:"required,password"`
-	FirstName string `json:"first_name" validate:"required,min=2,max=100"`
-	LastName  string `json:"last_name" validate:"required,min=2,max=100"`
+	FirstName string `json:"first_name" validate:"omitempty,min=2,max=100"`
+	LastName  string `json:"last_name" validate:"omitempty,min=2,max=100"`
 	Role      string `json:"role" validate:"required,oneof=driver company"`
 	Locale    string `json:"locale" validate:"omitempty,locale"`
 	Email     string `json:"email" validate:"omitempty,email,max=255"`
@@ -89,14 +89,18 @@ type AuthResponse struct {
 	Tokens TokenResponse `json:"tokens"`
 }
 
-// RegisterResponse is returned before the phone has been confirmed — no tokens
-// are issued until the OTP is verified.
+// RegisterResponse answers a registration. When the platform does not ask for
+// an SMS code, Auth carries the new session and the person is signed in; when
+// it does, Auth is absent, VerificationRequired is true and the code has been
+// sent.
 type RegisterResponse struct {
-	UserID       uuid.UUID `json:"user_id"`
-	Phone        string    `json:"phone"`
-	OTPExpiresAt time.Time `json:"otp_expires_at"`
-	ResendAfter  int       `json:"resend_after_seconds"`
-	Message      string    `json:"message"`
+	UserID               uuid.UUID     `json:"user_id"`
+	Phone                string        `json:"phone"`
+	VerificationRequired bool          `json:"verification_required"`
+	Auth                 *AuthResponse `json:"auth,omitempty"`
+	OTPExpiresAt         *time.Time    `json:"otp_expires_at,omitempty"`
+	ResendAfter          int           `json:"resend_after_seconds,omitempty"`
+	Message              string        `json:"message"`
 }
 
 // OTPSentResponse acknowledges that a code was dispatched.

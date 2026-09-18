@@ -19,7 +19,7 @@ Holat: 2026-yil sentyabr, `feat/telegram-distribution` branch.
 | 11 | Dashboard | ✅ | Unit, haqiqiy bazada SQL, web |
 | 12 | Tarif limitlari | ✅ 5 metrika, lock bilan | Unit, lokal API |
 | + | Telegram cheklovlari haqida ogohlantirish | ✅ | Unit |
-| + | Web kabinet (uz/ru) | ✅ | Typecheck, lint, 18 ta test, brauzerda qisman |
+| + | Web kabinet (uz/ru) | ✅ | Typecheck, lint, 17 ta test, CI workflow, brauzerda qisman |
 
 Migratsiyalar haqiqiy PostgreSQL 16 + PostGIS’da up → down → up sinalgan.
 
@@ -32,8 +32,9 @@ Migratsiyalar haqiqiy PostgreSQL 16 + PostGIS’da up → down → up sinalgan.
    narx hisobi, kesh.
 3. **To‘liq Docker stack** (`make up`): konteynerlar birga ishga tushishi,
    poster healthcheck’i, nginx orqali web + API.
-4. **Web uchun CI** (typecheck, lint, test, build) — eski frontend workflow
-   o‘chirilgan, yangisi qo‘shilmagan.
+4. ~~**Web uchun CI**~~ — qo‘shildi: `.github/workflows/web.yml` (typecheck,
+   ogohlantirishsiz lint, test, build, `web/dist` artefakti va runtime
+   bog‘liqliklar uchun `npm audit`). GitHub’da hali ishga tushib ko‘rilmagan.
 5. **Metrikalar** (masalan Prometheus): hozir faqat strukturali loglar,
    dashboard va healthcheck bor.
 6. **Tarif sotib olish oqimi** yangi limitlar bilan (to‘lov moduli bor,

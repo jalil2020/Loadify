@@ -1,0 +1,75 @@
+name: Web CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths: ["web/**", ".github/workflows/web.yml"]
+  pull_request:
+    paths: ["web/**", ".github/workflows/web.yml"]
+
+# A new push supersedes an in-flight run for the same ref; there is no value in
+# finishing CI for a commit nobody will merge.
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: web
+
+jobs:
+  verify:
+    name: Typecheck, lint, test and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # One Node version for CI and for people: web/.nvmrc.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # ci, not install: the lockfile is the input, and a silently updated
+      # dependency tree is exactly what CI exists to catch.
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Warnings fail too. A React Compiler bail-out is reported as a warning,
+      # and one that is tolerated once is never looked at again.
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # What nginx serves (deploy/docker-compose.yml mounts web/dist), kept so a
+      # release can use the exact bundle that passed the checks above.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+          retention-days: 14
+
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: web/.nvmrc
+
+      # Only what ships to the browser. Advisories in the build and test tools
+      # do not reach a user, and failing on them would teach people to ignore
+      # this step.
+      - name: npm audit (runtime dependencies)
+        run: npm audit --omit=dev --audit-level=high

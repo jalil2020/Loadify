@@ -32,5 +32,9 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    // The app tests render the whole router and load its lazy pages; they take
+    // about a second, but a stalled machine once pushed one past the default 5 s.
+    // A hang still fails, just not a slow runner.
+    testTimeout: 15_000,
   },
 });

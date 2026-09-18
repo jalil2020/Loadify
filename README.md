@@ -93,4 +93,7 @@ make test
 make web-check
 ```
 
+GitHub Actions’da xuddi shular ishlaydi: `backend.yml` (Go, migratsiyalar,
+PostGIS bilan testlar) va `web.yml` (Node 24, `web/.nvmrc`).
+
 Haqiqiy bazada SQL testlari: `LOADIFY_TEST_DSN="host=... user=... dbname=..." go test ./internal/repository/`.

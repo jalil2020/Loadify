@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -219,5 +220,46 @@ func TestACallNobodyCanBeChargedForIsNotMade(t *testing.T) {
 	}
 	if inner.calls != 0 || len(book.tasks) != 0 {
 		t.Errorf("calls %d, records %d; want neither", inner.calls, len(book.tasks))
+	}
+}
+
+// callBook records what the meter reports to metrics.
+type callBook struct {
+	outcomes []string
+	cost     int64
+}
+
+func (c *callBook) ModelCall(outcome string, _, _ int, costMicros int64) {
+	c.outcomes = append(c.outcomes, outcome)
+	c.cost += costMicros
+}
+
+// Monitoring hears about every call the ledger does, in the same words, and
+// the cost adds up to what was charged.
+func TestEveryRecordedCallIsReportedToMetrics(t *testing.T) {
+	calls := &callBook{}
+	meter := ai.NewMetered(&pricedExtractor{}, allowance{limit: 1}, &ledger{}, jsonCache{}, meterConfig, zone,
+		logger.New("test", "error")).WithMetrics(calls)
+	ctx := charged(uuid.New(), uuid.New())
+
+	if _, err := meter.Extract(ctx, question); err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	if _, err := meter.Extract(ctx, question); err != nil {
+		t.Fatalf("second: %v", err)
+	}
+
+	refused := ai.NewMetered(&pricedExtractor{}, allowance{limit: 1, used: 1}, &ledger{}, nil, meterConfig, zone,
+		logger.New("test", "error")).WithMetrics(calls)
+	if _, err := refused.Extract(ctx, question); !errors.Is(err, domain.ErrAIQuotaExhausted) {
+		t.Fatalf("third: err = %v, want the plan limit", err)
+	}
+
+	want := []string{"ok", "cache_hit", "rejected_quota"}
+	if !slices.Equal(calls.outcomes, want) {
+		t.Errorf("outcomes = %v, want %v", calls.outcomes, want)
+	}
+	if calls.cost != 6000 {
+		t.Errorf("cost = %d micros, want the one paid call's 6000", calls.cost)
 	}
 }

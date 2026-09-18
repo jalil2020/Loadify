@@ -228,8 +228,12 @@ services:
       PAYME_SECRET_KEY: ${PAYME_SECRET_KEY:-}
       UZUM_MERCHANT_ID: ${UZUM_MERCHANT_ID:-}
       UZUM_SECRET_KEY: ${UZUM_SECRET_KEY:-}
+      # Prometheus metrics, for the internal network only: exposed to other
+      # containers, never published on the host and never proxied by nginx.
+      METRICS_ADDR: ":9090"
     ports:
       - "${APP_PORT:-8080}:8080"
+    expose: ["9090"]
     volumes:
       - ../secrets:/app/secrets:ro
     healthcheck:
@@ -264,13 +268,17 @@ services:
       # A send already on its way has to finish and be written down, or a
       # restart could post it twice; stop_grace_period leaves room for this.
       APP_SHUTDOWN_GRACE: ${POSTER_SHUTDOWN_GRACE:-40s}
+      # Every replica serves its own metrics; Prometheus finds them all through
+      # the service name (deploy/prometheus/prometheus.yml).
+      POSTER_METRICS_ADDR: ":9091"
     entrypoint: ["/app/poster"]
+    expose: ["9091"]
     stop_grace_period: 50s
     volumes:
       - ../secrets:/app/secrets:ro
     healthcheck:
-      # No port to probe: the worker refreshes this file while Postgres and
-      # Redis both answer.
+      # Not the metrics port: a port that answers says nothing about the
+      # stores. The worker refreshes this file while Postgres and Redis answer.
       test: ["CMD-SHELL", "find /tmp/loadify-poster.alive -mmin -2 | grep -q ."]
       interval: 30s
       timeout: 5s

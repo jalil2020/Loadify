@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/loadify/backend/internal/ai"
 	"github.com/loadify/backend/internal/config"
 	"github.com/loadify/backend/internal/delivery/http/handler"
@@ -17,6 +19,7 @@ import (
 	"github.com/loadify/backend/internal/infrastructure/cache"
 	"github.com/loadify/backend/internal/infrastructure/crypto"
 	"github.com/loadify/backend/internal/infrastructure/database"
+	"github.com/loadify/backend/internal/infrastructure/metrics"
 	"github.com/loadify/backend/internal/infrastructure/payment"
 	"github.com/loadify/backend/internal/infrastructure/push"
 	"github.com/loadify/backend/internal/infrastructure/ratelimit"
@@ -54,6 +57,9 @@ type Container struct {
 	// Hub is exposed so the server can start its Redis subscription and close it
 	// during graceful shutdown.
 	Hub *ws.Hub
+
+	// Metrics is this process's Prometheus registry, served on its own address.
+	Metrics *prometheus.Registry
 }
 
 // Repositories groups the persistence adapters.
@@ -158,6 +164,8 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cache: %w", err)
 	}
+
+	registry := metrics.NewRegistry("api", Version)
 
 	tokens, err := jwt.New(jwt.Config{
 		AccessSecret:  cfg.JWT.AccessSecret,
@@ -282,7 +290,8 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 		} else {
 			// Every call is charged to a company and refused once its plan or
 			// the day's budget is spent.
-			adExtractor = ai.NewMetered(extractor, quotaUsecase, repos.AITasks, redisCache, cfg.AI, location, log)
+			adExtractor = ai.NewMetered(extractor, quotaUsecase, repos.AITasks, redisCache, cfg.AI, location, log).
+				WithMetrics(metrics.NewAI(registry))
 		}
 	}
 	adParser := usecase.NewAdParser(repos.Geo, repos.CargoTypes, referenceUsecase, redisCache, cfg.App.Timezone, adExtractor, log)
@@ -376,6 +385,7 @@ func NewContainer(cfg *config.Config, log logger.Logger) (*Container, error) {
 		Log:       log,
 		DB:        db,
 		Cache:     redisCache,
+		Metrics:   registry,
 		Storage:   objectStorage,
 		SMS:       smsSender,
 		Tokens:    tokens,

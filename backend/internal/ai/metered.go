@@ -40,7 +40,20 @@ type Metered struct {
 	cfg      config.AIConfig
 	location *time.Location
 	log      logger.Logger
+	metrics  Metrics
 	now      func() time.Time
+}
+
+// Metrics receives every call the meter writes down, for platform-wide
+// totals. outcome is ok, cache_hit, failed, or rejected_ and the reason.
+type Metrics interface {
+	ModelCall(outcome string, tokensIn, tokensOut int, costMicros int64)
+}
+
+// WithMetrics makes the meter report each call to m as well as recording it.
+func (m *Metered) WithMetrics(metrics Metrics) *Metered {
+	m.metrics = metrics
+	return m
 }
 
 // NewMetered wraps an extractor. cache may be nil.
@@ -183,11 +196,26 @@ func (m *Metered) reject(ctx context.Context, task *domain.AITask, reason string
 // record never fails the call: the answer is already paid for, and throwing it
 // away because the ledger hiccuped would only cost a second call.
 func (m *Metered) record(ctx context.Context, task *domain.AITask) {
+	if m.metrics != nil {
+		m.metrics.ModelCall(outcome(task), task.TokensIn, task.TokensOut, task.CostMicros)
+	}
 	if err := m.tasks.Record(ctx, task); err != nil {
 		m.log.Error("model call not recorded",
 			logger.String("company_id", task.CompanyID.String()),
 			logger.String("status", task.Status),
 			logger.Err(err))
+	}
+}
+
+// outcome names how a call ended, in the words the metrics use.
+func outcome(task *domain.AITask) string {
+	switch {
+	case task.CacheHit:
+		return "cache_hit"
+	case task.Status == domain.AITaskRejected && task.RejectReason != nil:
+		return "rejected_" + *task.RejectReason
+	default:
+		return task.Status
 	}
 }
 

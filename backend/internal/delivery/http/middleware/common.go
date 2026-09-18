@@ -56,15 +56,7 @@ func AccessLog(log logger.Logger) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		start := time.Now()
 		err := c.Next()
-
-		// A handler that fails returns the error up to Fiber's central
-		// ErrorHandler, which only writes the status after every middleware has
-		// unwound. Reading the response here would therefore report 200 for
-		// every rejection, so the status is taken from the error instead.
-		status := c.Response().StatusCode()
-		if err != nil {
-			status = apperror.As(err).HTTPStatus
-		}
+		status := statusOf(c, err)
 
 		fields := []logger.Field{
 			logger.String("method", c.Method()),
@@ -80,7 +72,7 @@ func AccessLog(log logger.Logger) fiber.Handler {
 		if err != nil {
 			// The machine code is what an operator greps for; the wrapped cause
 			// is the only place the underlying failure is recorded.
-			appErr := apperror.As(err)
+			appErr := appErrorOf(err)
 			fields = append(fields,
 				logger.String("error_code", appErr.Code),
 				logger.Err(err))
@@ -96,6 +88,19 @@ func AccessLog(log logger.Logger) fiber.Handler {
 		}
 		return err
 	}
+}
+
+// statusOf is the status the client will receive.
+//
+// A handler that fails returns the error up to Fiber's central ErrorHandler,
+// which only writes the status after every middleware has unwound. Reading the
+// response in a middleware would therefore report 200 for every rejection, so
+// the status is taken from the error instead.
+func statusOf(c *fiber.Ctx, err error) int {
+	if err != nil {
+		return appErrorOf(err).HTTPStatus
+	}
+	return c.Response().StatusCode()
 }
 
 // RateLimit throttles by authenticated user when possible and by IP otherwise,
@@ -189,14 +194,7 @@ func Locale(defaultLocale string) fiber.Handler {
 func ErrorHandler(log logger.Logger, isProduction bool) fiber.ErrorHandler {
 	return func(c *fiber.Ctx, err error) error {
 		requestID := RequestID(c)
-
-		var appErr *apperror.Error
-		var fiberErr *fiber.Error
-		if errors.As(err, &fiberErr) {
-			appErr = mapFiberError(fiberErr)
-		} else {
-			appErr = apperror.As(err)
-		}
+		appErr := appErrorOf(err)
 
 		if appErr.HTTPStatus >= 500 {
 			log.Error("unhandled error",
@@ -213,6 +211,17 @@ func ErrorHandler(log logger.Logger, isProduction bool) fiber.ErrorHandler {
 
 		return response.Fail(c, appErr, requestID)
 	}
+}
+
+// appErrorOf is the error as the client receives it. Fiber's own errors (an
+// unknown path, a body too large) are not apperror values, and read as one
+// they would all look like a 500.
+func appErrorOf(err error) *apperror.Error {
+	var fiberErr *fiber.Error
+	if errors.As(err, &fiberErr) {
+		return mapFiberError(fiberErr)
+	}
+	return apperror.As(err)
 }
 
 func mapFiberError(err *fiber.Error) *apperror.Error {

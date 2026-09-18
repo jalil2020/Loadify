@@ -240,6 +240,22 @@ type PostingJobFilter struct {
 	To        *time.Time
 }
 
+// PostingBacklog is the queue as monitoring sees it.
+type PostingBacklog struct {
+	// Jobs counts what is waiting or in flight, by status.
+	Jobs map[PostingJobStatus]int64
+	// OldestNextAttempt is the earliest time any waiting job is due. It may be
+	// in the future, when everything is waiting on purpose; nil when nothing
+	// waits at all.
+	OldestNextAttempt *time.Time
+}
+
+// PostingBacklogReader reads the backlog. It stands apart from
+// PostingRepository because only monitoring needs it.
+type PostingBacklogReader interface {
+	Backlog(ctx context.Context) (PostingBacklog, error)
+}
+
 // PostingRepository persists runs, jobs and their history.
 type PostingRepository interface {
 	// CreateRun writes the run, its jobs and their first history rows in one

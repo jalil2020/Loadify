@@ -96,4 +96,15 @@ func TestDistributionQueriesRunAgainstTheSchema(t *testing.T) {
 	if _, _, err := posting.ListJobs(ctx, company, domain.PostingJobFilter{}, 0, 10); err != nil {
 		t.Fatalf("ListJobs: %v", err)
 	}
+	backlog, err := NewPostingBacklogReader(db).Backlog(ctx)
+	if err != nil {
+		t.Fatalf("Backlog: %v", err)
+	}
+	for status := range backlog.Jobs {
+		switch status {
+		case domain.PostingPending, domain.PostingRateLimited, domain.PostingProcessing:
+		default:
+			t.Errorf("Backlog counted %q jobs, which are not waiting", status)
+		}
+	}
 }

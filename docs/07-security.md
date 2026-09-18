@@ -56,6 +56,9 @@
 - `posting_history`: har bir post uchun kim, qaysi e’lon, qaysi guruh, qachon,
   holat, xato, urinish va Telegram javobi.
 - Strukturali loglar (zap), har bir so‘rovda `request_id`.
+- Prometheus metrikalari alohida ichki portda (`METRICS_ADDR`,
+  `POSTER_METRICS_ADDR`), nginx orqali tashqariga chiqmaydi; label’larda
+  id, telefon yoki matn yo‘q ([06](06-queue-rate-limits.md#kuzatuv-prometheus-metrikalari)).
 - Telegram cheklovlari haqida egasi, menejerlar va platforma adminlariga
   avtomatik bildirishnoma.
 

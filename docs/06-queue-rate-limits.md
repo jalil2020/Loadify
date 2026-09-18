@@ -96,3 +96,28 @@ bitta atomik operatsiya bo‘lgani uchun ikki worker bir vaqtda o‘ta olmaydi.
 - Oylar platforma vaqt zonasida (Asia/Tashkent) hisoblanadi.
 - Limitlar `subscription_plans.limits` JSONB’da; yangi limit qo‘shish kod
   o‘zgartirishni talab qilmaydi. Tarifi yo‘q kompaniya standart (Start) tarifda.
+
+## Kuzatuv (Prometheus metrikalari)
+
+Har bir jarayon `/metrics` ni o‘z ichki manzilida beradi: API —
+`METRICS_ADDR` (standart `127.0.0.1:9090`), poster — `POSTER_METRICS_ADDR`
+(standart `127.0.0.1:9091`); `off` o‘chiradi. nginx ularni proxy qilmaydi,
+Docker’da faqat ichki tarmoqqa ochiladi. Namuna sozlama va ogohlantirishlar:
+`deploy/prometheus/prometheus.yml`, `deploy/prometheus/alerts.yml`.
+
+| Metrika | Nima deydi |
+|---|---|
+| `loadify_posting_jobs{status}` | Navbatda turgan (`pending`, `rate_limited`) va yuborilayotgan postlar |
+| `loadify_posting_oldest_overdue_seconds` | Vaqti kelgan, lekin hali olinmagan eng eski post qancha kechikkan. Cooldown yoki FLOOD_WAIT’ni kutish kechikish emas — asosiy "tiqilib qoldimi?" signali |
+| `loadify_posting_jobs_finished_total{status}` | Worker job’ni qaysi holatda qoldirgani |
+| `loadify_posting_guard_refusals_total{reason}` | Guard to‘xtatgan yuborishlar, sababi bilan |
+| `loadify_telegram_send_failures_total{kind}` | Telegram rad etgani: `flood_wait`, `peer_flood`, `slowmode`, `transient`… |
+| `loadify_telegram_send_duration_seconds{result}` | Bitta yuborish vaqti |
+| `loadify_posting_alerts_total{kind}` | Odamlarga yuborilgan ogohlantirishlar |
+| `loadify_http_requests_total{method,route,status}`, `…_duration_seconds` | API so‘rovlari, route **shabloni** bo‘yicha (`/api/v1/load-ads/:id`) |
+| `loadify_ai_calls_total{outcome}`, `…_tokens_total`, `…_cost_usd_total` | Model chaqiruvlari, kesh, rad va narx |
+
+Label qiymatlari faqat yopiq to‘plamdan: yo‘l o‘rniga route shabloni (topilmagan
+yo‘l — guruh prefiksi yoki `/*`), xato matni o‘rniga Telegram xato turi, hech
+qachon id yoki foydalanuvchi matni emas. Aks holda internetdagi har kim yangi
+time series yarata olardi.

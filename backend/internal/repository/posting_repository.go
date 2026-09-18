@@ -18,6 +18,11 @@ func NewPostingRepository(db *gorm.DB) domain.PostingRepository {
 	return &postingRepository{Base: NewBase(db)}
 }
 
+// NewPostingBacklogReader reads the queue's size for monitoring.
+func NewPostingBacklogReader(db *gorm.DB) domain.PostingBacklogReader {
+	return &postingRepository{Base: NewBase(db)}
+}
+
 // CreateRun writes the run, its jobs and their first history rows together.
 //
 // One transaction, and nothing reaches the queue before it commits: the relay
@@ -184,6 +189,42 @@ func (r *postingRepository) DueJobs(ctx context.Context, limit int) ([]domain.Po
 		return nil, translate(err, "posting job")
 	}
 	return jobs, nil
+}
+
+// backlogSQL counts the live part of the queue. The two halves match the
+// partial indexes on waiting and on in-flight jobs, so the count reads those
+// indexes rather than every post ever sent.
+const backlogSQL = `
+SELECT status, count(*) AS jobs, min(next_attempt_at) AS oldest
+FROM posting_jobs
+WHERE status IN ('pending', 'rate_limited')
+GROUP BY status
+UNION ALL
+SELECT status, count(*), NULL
+FROM posting_jobs
+WHERE status = 'processing'
+GROUP BY status`
+
+// Backlog reads how much is waiting, for monitoring.
+func (r *postingRepository) Backlog(ctx context.Context) (domain.PostingBacklog, error) {
+	var rows []struct {
+		Status domain.PostingJobStatus
+		Jobs   int64
+		Oldest *time.Time
+	}
+	if err := r.DB(ctx).Raw(backlogSQL).Scan(&rows).Error; err != nil {
+		return domain.PostingBacklog{}, translate(err, "posting job")
+	}
+
+	backlog := domain.PostingBacklog{Jobs: make(map[domain.PostingJobStatus]int64, len(rows))}
+	for _, row := range rows {
+		backlog.Jobs[row.Status] = row.Jobs
+		if row.Oldest != nil && (backlog.OldestNextAttempt == nil || row.Oldest.Before(*backlog.OldestNextAttempt)) {
+			oldest := *row.Oldest
+			backlog.OldestNextAttempt = &oldest
+		}
+	}
+	return backlog, nil
 }
 
 // Claim moves one job to processing, but only if it is still claimable.

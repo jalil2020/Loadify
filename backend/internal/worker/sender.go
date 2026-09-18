@@ -44,10 +44,28 @@ type Sender struct {
 	limits   config.TelegramConfig
 	owner    string
 	log      logger.Logger
+	metrics  Metrics
 
 	now    func() time.Time
 	jitter func(time.Duration) time.Duration
 }
+
+// Metrics is what the sender reports as it works. The values are closed sets
+// (a status, a guard reason, a Telegram error kind), never ids or messages.
+type Metrics interface {
+	JobFinished(status domain.PostingJobStatus)
+	GuardRefused(reason domain.SkipReason)
+	// TelegramSend times one send; kind is empty when Telegram accepted it.
+	TelegramSend(took time.Duration, kind domain.TelegramErrorKind)
+	Alerted(kind domain.DistributionAlertKind)
+}
+
+type nopMetrics struct{}
+
+func (nopMetrics) JobFinished(domain.PostingJobStatus)                  {}
+func (nopMetrics) GuardRefused(domain.SkipReason)                       {}
+func (nopMetrics) TelegramSend(time.Duration, domain.TelegramErrorKind) {}
+func (nopMetrics) Alerted(domain.DistributionAlertKind)                 {}
 
 // New builds a sender. owner names this worker in the lease, so a stuck job
 // can be traced to the process that took it. alerts may be nil, in which case
@@ -68,8 +86,16 @@ func New(
 	return &Sender{
 		posting: posting, accounts: accounts, groups: groups, ads: ads,
 		guard: guard, telegram: telegram, vault: vault, alerts: alerts, limits: limits,
-		owner: owner, log: log, now: time.Now, jitter: spread,
+		owner: owner, log: log, metrics: nopMetrics{}, now: time.Now, jitter: spread,
 	}
+}
+
+// WithMetrics makes the sender report what it does to m.
+func (s *Sender) WithMetrics(m Metrics) *Sender {
+	if m != nil {
+		s.metrics = m
+	}
+	return s
 }
 
 // spread adds up to a fifth again to a wait, so a Telegram hiccup does not
@@ -105,6 +131,7 @@ func (s *Sender) Process(ctx context.Context, jobID uuid.UUID) error {
 			logger.Err(err))
 		return err
 	}
+	s.metrics.JobFinished(outcome.Status)
 	return nil
 }
 
@@ -157,6 +184,7 @@ func (s *Sender) handle(ctx context.Context, job *domain.PostingJob) domain.JobO
 			"The limits could not be checked, so nothing was sent.")
 	}
 	if !decision.Allowed {
+		s.metrics.GuardRefused(decision.Reason)
 		s.recordSpam(ctx, job, string(decision.Reason), decision.RetryAfter)
 		if decision.Reason == domain.SkipDuplicate {
 			return skipped(domain.SkipDuplicate)
@@ -178,6 +206,7 @@ func (s *Sender) handle(ctx context.Context, job *domain.PostingJob) domain.JobO
 	}
 	defer wipe(session)
 
+	started := time.Now()
 	result, err := s.telegram.Send(ctx, domain.SendRequest{
 		Session:    session,
 		PeerID:     group.TgPeerID,
@@ -185,6 +214,7 @@ func (s *Sender) handle(ctx context.Context, job *domain.PostingJob) domain.JobO
 		RandomID:   job.RandomID,
 		Text:       job.MessageText,
 	})
+	s.metrics.TelegramSend(time.Since(started), telegramKind(err))
 	if err == nil {
 		return s.sent(ctx, account, group, result, now)
 	}
@@ -202,12 +232,7 @@ func (s *Sender) failure(
 	err error,
 	now time.Time,
 ) domain.JobOutcome {
-	var tgErr *domain.TelegramError
-	if !errors.As(err, &tgErr) {
-		// A failure we cannot classify is a transport problem until proven
-		// otherwise; the same random_id keeps a retry from duplicating.
-		tgErr = &domain.TelegramError{Kind: domain.TelegramTransient, Err: err}
-	}
+	tgErr := asTelegramError(err)
 	code := tgErr.Code
 	if code == "" {
 		code = string(tgErr.Kind)
@@ -317,6 +342,25 @@ func (s *Sender) failure(
 	}
 }
 
+// asTelegramError reads a send failure. A failure we cannot classify is a
+// transport problem until proven otherwise; the same random_id keeps a retry
+// from duplicating.
+func asTelegramError(err error) *domain.TelegramError {
+	var tgErr *domain.TelegramError
+	if !errors.As(err, &tgErr) {
+		tgErr = &domain.TelegramError{Kind: domain.TelegramTransient, Err: err}
+	}
+	return tgErr
+}
+
+// telegramKind names a send's failure for metrics; empty when it succeeded.
+func telegramKind(err error) domain.TelegramErrorKind {
+	if err == nil {
+		return ""
+	}
+	return asTelegramError(err).Kind
+}
+
 func (s *Sender) sent(
 	ctx context.Context,
 	account *domain.TelegramAccount,
@@ -410,6 +454,7 @@ func (s *Sender) alert(
 	if s.alerts == nil {
 		return
 	}
+	s.metrics.Alerted(alert.Kind)
 	alert.CompanyID = account.CompanyID
 	alert.AccountID = account.ID
 	alert.OwnerID = account.UserID

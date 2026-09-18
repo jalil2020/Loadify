@@ -27,6 +27,7 @@ type Config struct {
 	Payment  PaymentConfig
 	Telegram TelegramConfig
 	AI       AIConfig
+	Metrics  MetricsConfig
 }
 
 type AppConfig struct {
@@ -251,6 +252,18 @@ const (
 	AIProviderHermes = "hermes"
 )
 
+// MetricsConfig says where each process serves Prometheus metrics. The API and
+// the posting worker have their own addresses so both can run on one host.
+// An empty address means off.
+//
+// The defaults listen on loopback only. Inside Docker the compose file opens
+// them to the internal network, never to the internet: nginx does not proxy
+// them.
+type MetricsConfig struct {
+	Addr       string
+	PosterAddr string
+}
+
 // AIConfig configures the optional model-backed helpers. The platform works
 // without them: parsing falls back to the rules, ranking to the score.
 type AIConfig struct {
@@ -412,11 +425,24 @@ func Load(envFiles ...string) (*Config, error) {
 		PriceOutPerMTok: getFloat("AI_PRICE_OUTPUT_PER_MTOK", 0),
 		DailyBudgetUSD:  getFloat("AI_DAILY_BUDGET_USD", 0),
 	}
+	cfg.Metrics = MetricsConfig{
+		Addr:       metricsAddr("METRICS_ADDR", "127.0.0.1:9090"),
+		PosterAddr: metricsAddr("POSTER_METRICS_ADDR", "127.0.0.1:9091"),
+	}
 
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// metricsAddr reads a metrics address; "off" turns it off, since an empty
+// value falls back to the default like every other setting.
+func metricsAddr(key, fallback string) string {
+	if v := getString(key, fallback); !strings.EqualFold(v, "off") {
+		return v
+	}
+	return ""
 }
 
 // Validate rejects configurations that would fail at runtime or silently weaken security.

@@ -35,8 +35,10 @@ Migratsiyalar haqiqiy PostgreSQL 16 + PostGIS’da up → down → up sinalgan.
 4. ~~**Web uchun CI**~~ — qo‘shildi: `.github/workflows/web.yml` (typecheck,
    ogohlantirishsiz lint, test, build, `web/dist` artefakti va runtime
    bog‘liqliklar uchun `npm audit`). GitHub’da hali ishga tushib ko‘rilmagan.
-5. **Metrikalar** (masalan Prometheus): hozir faqat strukturali loglar,
-   dashboard va healthcheck bor.
+5. ~~**Metrikalar**~~ — qo‘shildi: API va poster’da Prometheus `/metrics`
+   (ichki portlarda), navbat kechikishi, Telegram xatolari, guard, HTTP va AI;
+   `deploy/prometheus/` da namuna sozlama va ogohlantirishlar. Lokal
+   tekshirilgan; Prometheus serverining o‘zi hali ishga tushirib ko‘rilmagan.
 6. **Tarif sotib olish oqimi** yangi limitlar bilan (to‘lov moduli bor,
    interfeysda ulanmagan).
 7. **Qaror kutmoqda:** SMS’siz ro‘yxatdan o‘tish production’da qoladimi

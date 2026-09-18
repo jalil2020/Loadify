@@ -13,6 +13,7 @@ import (
 
 	"github.com/loadify/backend/internal/delivery/http/middleware"
 	"github.com/loadify/backend/internal/delivery/http/route"
+	"github.com/loadify/backend/internal/infrastructure/metrics"
 	"github.com/loadify/backend/pkg/logger"
 )
 
@@ -36,6 +37,8 @@ func NewFiberApp(c *Container) *fiber.App {
 	})
 
 	app.Use(middleware.AssignRequestID())
+	// Before everything that can refuse a request, so refusals are counted.
+	app.Use(middleware.Metrics(app, metrics.NewHTTP(c.Metrics)))
 	app.Use(recoverPanics(c.Log))
 	app.Use(middleware.SecurityHeaders(c.Cfg.App.IsProduction()))
 	app.Use(middleware.CORS(c.Cfg.Security))
@@ -104,6 +107,14 @@ func Run(c *Container, app *fiber.App) error {
 	defer stopHub()
 	if c.Hub != nil {
 		go c.Hub.Run(hubCtx)
+	}
+
+	// Metrics outlive the HTTP drain, so the last requests are still counted
+	// when a final scrape arrives; they stop when Run returns.
+	metricsCtx, stopMetrics := context.WithCancel(context.Background())
+	defer stopMetrics()
+	if err := metrics.Serve(metricsCtx, c.Cfg.Metrics.Addr, c.Metrics, c.Log); err != nil {
+		return fmt.Errorf("metrics listener: %w", err)
 	}
 
 	serverErr := make(chan error, 1)

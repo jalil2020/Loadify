@@ -434,3 +434,69 @@ func assertSpam(t *testing.T, h *harness, kind string) {
 	}
 	t.Errorf("spam events = %v, want %q recorded", h.posting.spamEvents, kind)
 }
+
+// metricBook records what the sender reports.
+type metricBook struct {
+	finished []domain.PostingJobStatus
+	refusals []domain.SkipReason
+	sends    []domain.TelegramErrorKind
+	alerts   []domain.DistributionAlertKind
+}
+
+func (m *metricBook) JobFinished(s domain.PostingJobStatus) { m.finished = append(m.finished, s) }
+func (m *metricBook) GuardRefused(r domain.SkipReason)      { m.refusals = append(m.refusals, r) }
+func (m *metricBook) TelegramSend(_ time.Duration, k domain.TelegramErrorKind) {
+	m.sends = append(m.sends, k)
+}
+func (m *metricBook) Alerted(k domain.DistributionAlertKind) { m.alerts = append(m.alerts, k) }
+
+// What monitoring sees has to match what happened: a send, a Telegram refusal
+// by its kind, and a guard refusal that never reached Telegram at all.
+func TestTheSenderReportsWhatHappened(t *testing.T) {
+	t.Run("a sent post", func(t *testing.T) {
+		h := newHarness(t)
+		book := &metricBook{}
+		h.sender.WithMetrics(book)
+		h.run(t)
+
+		if !slices.Equal(book.finished, []domain.PostingJobStatus{domain.PostingSent}) {
+			t.Errorf("finished = %v, want [sent]", book.finished)
+		}
+		if !slices.Equal(book.sends, []domain.TelegramErrorKind{""}) {
+			t.Errorf("sends = %v, want one that succeeded", book.sends)
+		}
+	})
+
+	t.Run("a flood wait", func(t *testing.T) {
+		h := newHarness(t)
+		book := &metricBook{}
+		h.sender.WithMetrics(book)
+		h.refuseWith(domain.TelegramFloodWait, "FLOOD_WAIT_600", 10*time.Minute)
+		h.run(t)
+
+		if !slices.Equal(book.sends, []domain.TelegramErrorKind{domain.TelegramFloodWait}) {
+			t.Errorf("sends = %v, want one flood_wait", book.sends)
+		}
+		if !slices.Equal(book.finished, []domain.PostingJobStatus{domain.PostingRateLimited}) {
+			t.Errorf("finished = %v, want [rate_limited]", book.finished)
+		}
+		if !slices.Equal(book.alerts, []domain.DistributionAlertKind{domain.AlertAccountPaused}) {
+			t.Errorf("alerts = %v, want the pause", book.alerts)
+		}
+	})
+
+	t.Run("a guard refusal", func(t *testing.T) {
+		h := newHarness(t)
+		book := &metricBook{}
+		h.sender.WithMetrics(book)
+		h.guard.decision = domain.GuardDecision{Reason: domain.SkipCooldown, RetryAfter: 20 * time.Minute}
+		h.run(t)
+
+		if !slices.Equal(book.refusals, []domain.SkipReason{domain.SkipCooldown}) {
+			t.Errorf("refusals = %v, want [cooldown]", book.refusals)
+		}
+		if len(book.sends) != 0 {
+			t.Errorf("a send was timed although Telegram was never called: %v", book.sends)
+		}
+	})
+}

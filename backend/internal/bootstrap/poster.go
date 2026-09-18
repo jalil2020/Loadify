@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/loadify/backend/internal/config"
 	"github.com/loadify/backend/internal/delivery/ws"
@@ -18,6 +19,7 @@ import (
 	"github.com/loadify/backend/internal/infrastructure/cache"
 	"github.com/loadify/backend/internal/infrastructure/crypto"
 	"github.com/loadify/backend/internal/infrastructure/database"
+	"github.com/loadify/backend/internal/infrastructure/metrics"
 	"github.com/loadify/backend/internal/infrastructure/push"
 	"github.com/loadify/backend/internal/infrastructure/queue"
 	"github.com/loadify/backend/internal/infrastructure/ratelimit"
@@ -31,7 +33,7 @@ import (
 // PosterContainer is the composition root of the posting worker.
 //
 // It is deliberately much smaller than the API container: the worker has no
-// HTTP surface, no storage and no payment providers. What it does have, and the
+// API (only a metrics listener), no storage and no payment providers. What it does have, and the
 // API process does not, is the vault that opens Telegram sessions.
 type PosterContainer struct {
 	Cfg   *config.Config
@@ -52,6 +54,11 @@ type PosterContainer struct {
 	Relay  *worker.Relay
 	Sender *worker.Sender
 	Queue  *queue.Streams
+
+	// Metrics is the worker's Prometheus registry. The backlog is on it even
+	// without Telegram credentials: posts piling up because nothing can send
+	// them is exactly what it should show.
+	Metrics *prometheus.Registry
 }
 
 // NewPosterContainer connects everything the worker needs, failing fast.
@@ -66,7 +73,10 @@ func NewPosterContainer(cfg *config.Config, log logger.Logger) (*PosterContainer
 		return nil, fmt.Errorf("cache: %w", err)
 	}
 
-	container := &PosterContainer{Cfg: cfg, Log: log, DB: db, Cache: redisCache}
+	container := &PosterContainer{Cfg: cfg, Log: log, DB: db, Cache: redisCache,
+		Metrics: metrics.NewRegistry("poster", Version)}
+	container.Metrics.MustRegister(
+		metrics.NewBacklog(repository.NewPostingBacklogReader(db.DB), 5*time.Second, log))
 
 	// Without credentials the worker still runs — it simply has nothing to
 	// send. That keeps a deployment without Telegram configured from crash
@@ -131,7 +141,7 @@ func (c *PosterContainer) wire() {
 		repository.NewTelegramGroupRepository(c.DB.DB),
 		repository.NewLoadAdRepository(c.DB.DB),
 		guard, c.Telegram, c.Vault, c.Alerts, c.Cfg.Telegram, owner, c.Log,
-	)
+	).WithMetrics(metrics.NewPosting(c.Metrics))
 }
 
 // Close releases every resource the container owns.
@@ -167,6 +177,13 @@ func RunPoster(c *PosterContainer) error {
 	defer stop()
 
 	failed := make(chan error, 1)
+
+	// Served until RunPoster returns, so the drain is still observable.
+	metricsCtx, stopMetrics := context.WithCancel(context.Background())
+	defer stopMetrics()
+	if err := metrics.Serve(metricsCtx, c.Cfg.Metrics.PosterAddr, c.Metrics, c.Log); err != nil {
+		return fmt.Errorf("metrics listener: %w", err)
+	}
 
 	c.Log.Info("posting worker started",
 		logger.String("version", Version),
@@ -219,8 +236,9 @@ func RunPoster(c *PosterContainer) error {
 	}
 }
 
-// HeartbeatFile is refreshed while both stores answer. The worker has no HTTP
-// port, so this file's age is what the container health check looks at.
+// HeartbeatFile is refreshed while both stores answer. Its age is what the
+// container health check looks at: the metrics port can be turned off, and a
+// port that answers says nothing about whether Postgres and Redis do.
 var HeartbeatFile = filepath.Join(os.TempDir(), "loadify-poster.alive")
 
 // runHealthLoop keeps an eye on the stores the worker cannot work without.

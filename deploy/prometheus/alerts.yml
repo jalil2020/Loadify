@@ -1,0 +1,87 @@
+# Alert rules for Loadify. Thresholds are starting points: tune them once there
+# is a week of real traffic to compare against.
+
+groups:
+  - name: loadify-posting
+    rules:
+      # Waiting out a cooldown or a FLOOD_WAIT is not late; a post whose time
+      # came ten minutes ago and still has not been picked up is. Also fires
+      # when Telegram credentials are missing and nothing can send.
+      - alert: PostingQueueStuck
+        expr: max(loadify_posting_oldest_overdue_seconds) > 600
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: Posts are more than 10 minutes past their time
+          description: >-
+            The oldest due post has waited {{ $value | humanizeDuration }}.
+            Check that the poster is running, that Telegram credentials are set,
+            and the poster log for consumer errors.
+
+      - alert: PostingBacklogUnreadable
+        expr: min(loadify_posting_backlog_up) == 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: The poster cannot read its queue from Postgres
+
+      # Telegram treating an account as a spammer is the one outcome this
+      # product exists to prevent. Every occurrence deserves a look.
+      - alert: TelegramAccountRestricted
+        expr: sum(increase(loadify_telegram_send_failures_total{kind="peer_flood"}[15m])) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: Telegram restricted an account for sending too much
+          description: >-
+            Its queued posts were cancelled and the owner was notified. If this
+            repeats, the platform limits (TELEGRAM_ACCOUNT_*, TELEGRAM_GROUP_*)
+            are too generous.
+
+      - alert: TelegramFloodWaitsFrequent
+        expr: sum(increase(loadify_telegram_send_failures_total{kind="flood_wait"}[1h])) > 5
+        labels: { severity: warning }
+        annotations:
+          summary: Telegram asked accounts to wait {{ $value }} times in an hour
+          description: The pacing is close to Telegram's own limits; consider slowing it down.
+
+      - alert: TelegramUnreachable
+        expr: |
+          sum(rate(loadify_telegram_send_failures_total{kind="transient"}[10m]))
+            / sum(rate(loadify_telegram_send_duration_seconds_count[10m])) > 0.2
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: More than a fifth of sends fail on the network
+
+      - alert: PosterDown
+        expr: absent(up{job="loadify-poster"} == 1)
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: No posting worker is answering
+
+  - name: loadify-api
+    rules:
+      - alert: APIServerErrors
+        expr: |
+          sum(rate(loadify_http_requests_total{status=~"5.."}[5m]))
+            / sum(rate(loadify_http_requests_total[5m])) > 0.05
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: More than 5% of API requests end in a server error
+
+      - alert: APIDown
+        expr: absent(up{job="loadify-api"} == 1)
+        for: 3m
+        labels: { severity: critical }
+        annotations:
+          summary: The API is not answering its metrics scrape
+
+      # The daily budget brake (AI_DAILY_BUDGET_USD) already stops spending;
+      # this says it is about to.
+      - alert: AISpendHigh
+        expr: sum(increase(loadify_ai_cost_usd_total[1h])) > 1
+        labels: { severity: info }
+        annotations:
+          summary: Model calls cost more than $1 in the last hour

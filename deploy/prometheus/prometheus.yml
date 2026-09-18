@@ -1,0 +1,26 @@
+# Example Prometheus configuration for the Docker Compose stack.
+#
+# Run Prometheus on the same network as the stack (loadify) and mount this
+# file as /etc/prometheus/prometheus.yml. The targets are the internal ports
+# from docker-compose.yml; neither is published on the host.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: loadify-api
+    static_configs:
+      - targets: ["api:9090"]
+
+  # The worker may run as several replicas (docker compose up --scale
+  # poster=N). The service name resolves to every one of them, so each is
+  # scraped on its own and none is missed.
+  - job_name: loadify-poster
+    dns_sd_configs:
+      - names: ["poster"]
+        type: A
+        port: 9091

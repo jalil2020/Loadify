@@ -1,62 +1,94 @@
-# LOADIFY
+# Loadify — Telegram yuk e’lonlarini mas’uliyat bilan tarqatish
 
-Freight marketplace connecting logistics companies and truck drivers in real time.
-First market: Uzbekistan. Roadmap: Central Asia → Europe → USA.
+Logist yuk e’lonini **bir marta** oddiy matn bilan yozadi. Tizim uni o‘qiydi,
+unga mos Telegram guruhlarini tanlaydi, anti-spam limitlaridan o‘tkazadi va
+**logistning o‘z Telegram akkauntidan** navbat orqali, oralatib yuboradi. Har bir
+post uchun nima bo‘lgani — yuborildi, kutmoqda, o‘tkazib yuborildi yoki xato —
+sababi bilan yozib boriladi.
 
-## Monorepo layout
+Tizim spam-bot emas: Telegram limitlarini aylanib o‘tmaydi, guruhlarga o‘zi
+qo‘shilmaydi, faqat foydalanuvchi o‘zi ulagan akkaunt va u o‘zi tanlagan
+guruhlar bilan ishlaydi. Telegram cheklov qo‘ysa, yuborish to‘xtaydi va sababi
+foydalanuvchiga aniq ko‘rsatiladi.
 
-```
-Loadify/
-├── backend/      Go 1.26 + Fiber v2 REST API + WebSocket (Clean Architecture)
-├── frontend/     Next.js 15 + React 19 + TypeScript + Tailwind + shadcn/ui
-├── android/      Flutter mobile app (driver + company)
-├── deploy/       Docker Compose, NGINX, Postgres init
-├── docs/         PRD, user flows, ER diagram, API docs, deployment guide
-└── .github/      CI/CD workflows
-```
+## Tarkibi
 
-## Stack
+| Qism | Papka | Nima |
+|---|---|---|
+| API | `backend/cmd/api` | Go (Fiber), REST `/api/v1`, JWT + RBAC |
+| Poster | `backend/cmd/poster` | Navbatdagi postlarni Telegram’ga yuboradigan worker (MTProto) |
+| Migratsiyalar | `backend/migrations`, `backend/cmd/migrate` | PostgreSQL + PostGIS |
+| Web | `web/` | React + Vite, o‘zbek/rus tilida logist kabineti |
+| Deploy | `deploy/` | Docker Compose, nginx |
 
-| Layer | Technology |
-|---|---|
-| Web | React 19, Next.js 15, TypeScript, TailwindCSS, shadcn/ui, TanStack Query, React Hook Form + Zod |
-| Mobile | Flutter, Riverpod, Dio, Google Maps, FCM |
-| API | Go 1.26, Fiber v2, Clean Architecture, Repository pattern, DI |
-| Database | PostgreSQL 16 + PostGIS, GORM |
-| Cache / Pub-Sub | Redis 7 |
-| Auth | JWT access + refresh rotation, RBAC |
-| Storage | MinIO (S3-compatible) |
-| Realtime | WebSocket hub + Redis pub/sub |
-| Push | Firebase Cloud Messaging |
-| Payments | Click, Payme, Uzum Bank (Stripe later) |
-| Maps | Google Maps Platform |
-| Infra | Docker, Docker Compose, NGINX, DigitalOcean, GitHub Actions |
+Hujjatlar: [`docs/`](docs/) — arxitektura, ERD, API, Telegram va AI
+strategiyasi, navbat va limitlar, xavfsizlik, MVP rejasi.
+API spetsifikatsiyasi: [`backend/docs/openapi.yaml`](backend/docs/openapi.yaml).
 
-## Quick start
+## Tez ishga tushirish
+
+### Docker bilan
 
 ```bash
 cp .env.example .env
-docker compose -f deploy/docker-compose.yml up -d
+make up
 ```
 
-Backend only (local Go):
+`make up` Postgres, Redis, MinIO, migratsiyalar, API va poster’ni ko‘taradi.
+Web ilova uchun alohida:
 
 ```bash
-cd backend && go run ./cmd/api
+make web-install && make web-dev
 ```
 
-## Documentation
+`http://localhost:3000` — web ilova, `http://localhost:8080/health` — API.
 
-| Document | Path |
-|---|---|
-| Product Requirements | [docs/PRD.md](docs/PRD.md) |
-| User Flows | [docs/USER_FLOWS.md](docs/USER_FLOWS.md) |
-| ER Diagram | [docs/ER_DIAGRAM.md](docs/ER_DIAGRAM.md) |
-| Architecture | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| REST API | [docs/API.md](docs/API.md) |
-| Design System | [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md) |
-| Deployment | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+### Docker’siz (Windows’da sinalgan)
 
-## Build status
+Kerak: PostgreSQL 16 + PostGIS, Go 1.26, Node 24.
 
-Progress is tracked module by module. See [docs/PROGRESS.md](docs/PROGRESS.md).
+1. Bazani bir marta tayyorlang (postgres superuser paroli so‘raladi):
+   `psql -U postgres -f deploy/local/postgres-setup.sql`
+2. `.env` da `DB_PORT` ni o‘z Postgres’ingiz portiga moslang.
+3. Alohida terminallarda:
+
+```bash
+make dev-redis
+```
+
+```bash
+make migrate && make run
+```
+
+```bash
+make run-poster
+```
+
+```bash
+make web-dev
+```
+
+`dev-redis` — xotirada ishlaydigan Redis o‘rnini bosuvchi (faqat lokal
+ishlab chiqish uchun, to‘xtatilsa limit hisoblagichlari nolga tushadi).
+
+## Telegram’ni ulash
+
+Poster Telegram’ga yuborishi uchun `.env` ga uchta qiymat kerak:
+
+- `TELEGRAM_API_ID`, `TELEGRAM_API_HASH` — my.telegram.org’dan o‘zingiz olasiz;
+- `TELEGRAM_SESSION_KEK` — sessiyalarni shifrlovchi kalit: `openssl rand -base64 32`.
+
+Uchalasi bo‘sh bo‘lsa tizim ishlayveradi, faqat hech narsa yuborilmaydi.
+Uchalasi birga berilishi shart — qisman sozlama ishga tushishda rad etiladi.
+
+## Tekshiruvlar
+
+```bash
+make test
+```
+
+```bash
+make web-check
+```
+
+Haqiqiy bazada SQL testlari: `LOADIFY_TEST_DSN="host=... user=... dbname=..." go test ./internal/repository/`.

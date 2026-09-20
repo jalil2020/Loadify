@@ -291,6 +291,49 @@ export interface QuotaItem {
   resets_at?: string;
 }
 
+// ── plans and billing ───────────────────────────────────────────────
+
+/** One purchasable tier. Limits are keyed by metric, as the quota is. */
+export interface Plan {
+  id: UUID;
+  code: string;
+  name: string;
+  description?: string | null;
+  target_role: string;
+  price_amount: number;
+  currency: string;
+  period: string;
+  trial_days: number;
+  features: string[];
+  limits: Record<string, number>;
+  is_default: boolean;
+  is_current: boolean;
+}
+
+export interface Subscription {
+  id: UUID;
+  plan: Plan | null;
+  status: string;
+  started_at?: string | null;
+  expires_at?: string | null;
+  cancelled_at?: string | null;
+  auto_renew: boolean;
+  days_left?: number | null;
+  created_at: string;
+}
+
+/** What the server answers when a plan is bought. */
+export interface Checkout {
+  order_id: UUID;
+  provider: string;
+  amount: number;
+  currency: string;
+  status: string;
+  checkout_url?: string;
+  /** True when it settled at once: a free plan, or a wallet with the balance. */
+  paid: boolean;
+}
+
 export interface Usage {
   period_start: string;
   period_end: string;

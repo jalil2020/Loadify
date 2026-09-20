@@ -6,13 +6,16 @@ import type {
   Country,
   Dashboard,
   LoadAd,
+  Checkout,
   Notification,
+  Plan,
   PostingJob,
   PublishPreview,
   PublishResult,
   Region,
   SaveGroupRules,
   SaveLoadAd,
+  Subscription,
   TelegramAccount,
   TelegramDialog,
   TelegramGroup,
@@ -25,6 +28,9 @@ import type {
 export const keys = {
   dashboard: (scope: string) => ["dashboard", scope] as const,
   usage: ["usage"] as const,
+  plans: ["plans"] as const,
+  subscription: ["subscription"] as const,
+  paymentMethods: ["payment-methods"] as const,
   ads: ["ads"] as const,
   adList: (f: AdFilters) => ["ads", "list", f] as const,
   ad: (id: UUID) => ["ads", "detail", id] as const,
@@ -92,6 +98,65 @@ export function useDashboard(scope?: "mine" | "company") {
 
 export function useUsage() {
   return useQuery({ queryKey: keys.usage, queryFn: () => api.get<Usage>("/subscriptions/usage") });
+}
+
+// ── plans and billing ───────────────────────────────────────────────
+
+export function usePlans() {
+  return useQuery({
+    queryKey: keys.plans,
+    queryFn: () => api.get<Plan[]>("/plans", { target_role: "company" }),
+  });
+}
+
+/** The current plan, or null on the free tier, which the server reports as
+ * `{subscription: null}` rather than a 404. */
+export function useSubscription() {
+  return useQuery({
+    queryKey: keys.subscription,
+    queryFn: async () => {
+      const data = await api.get<Subscription | { subscription: null }>("/subscriptions/me");
+      return data && "id" in data ? data : null;
+    },
+  });
+}
+
+export function usePaymentMethods() {
+  return useQuery({
+    queryKey: keys.paymentMethods,
+    staleTime: REF_STALE,
+    queryFn: () => api.get<{ providers: string[] }>("/payments/methods"),
+  });
+}
+
+export function useSubscribe() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { plan_id: UUID; provider: string; auto_renew: boolean; return_url?: string }) =>
+      api.post<Checkout>("/subscriptions", body),
+    onSuccess: (checkout) => {
+      // A checkout that is still open changes nothing yet; one that settled
+      // changes the plan, and with it every limit on the page.
+      if (checkout.paid) void refreshBilling(qc);
+    },
+  });
+}
+
+export function useCancelSubscription() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ message: string }>("/subscriptions/cancel"),
+    onSuccess: () => void refreshBilling(qc),
+  });
+}
+
+async function refreshBilling(qc: ReturnType<typeof useQueryClient>) {
+  await Promise.all([
+    qc.invalidateQueries({ queryKey: keys.subscription }),
+    qc.invalidateQueries({ queryKey: keys.plans }),
+    qc.invalidateQueries({ queryKey: keys.usage }),
+    qc.invalidateQueries({ queryKey: ["dashboard"] }),
+  ]);
 }
 
 // ── adverts ─────────────────────────────────────────────────────────

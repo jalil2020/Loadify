@@ -4,7 +4,7 @@ import { ru } from "../i18n/ru";
 import { uz } from "../i18n/uz";
 import { adTitle } from "../pages/ads/adText";
 import { ApiError, api, refreshSession, tokens } from "./api";
-import { formatDate, formatDuration, formatWhen } from "./format";
+import { formatDate, formatDuration, formatMoney, formatWhen } from "./format";
 import { describeError, normalizePhone, reasonText, UZ_PHONE } from "./labels";
 
 const t = (key: keyof typeof uz, vars?: Record<string, string | number>) => interpolate(uz[key], vars);
@@ -31,6 +31,13 @@ describe("format", () => {
 
   it("shows a calendar day as written", () => {
     expect(formatDate("2026-09-18")).toBe("18.09.2026");
+  });
+
+  it("reads minor units", () => {
+    // The grouping space is a non-breaking one, as the formatter writes it.
+    expect(formatMoney(29900000, "UZS")).toBe("299 000 UZS");
+    expect(formatMoney(12345, "UZS")).toBe("123,45 UZS");
+    expect(formatMoney(null, "UZS")).toBe("—");
   });
 
   it("rounds waits into words", () => {

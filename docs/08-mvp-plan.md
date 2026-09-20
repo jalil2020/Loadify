@@ -39,8 +39,11 @@ Migratsiyalar haqiqiy PostgreSQL 16 + PostGIS’da up → down → up sinalgan.
    (ichki portlarda), navbat kechikishi, Telegram xatolari, guard, HTTP va AI;
    `deploy/prometheus/` da namuna sozlama va ogohlantirishlar. Lokal
    tekshirilgan; Prometheus serverining o‘zi hali ishga tushirib ko‘rilmagan.
-6. **Tarif sotib olish oqimi** yangi limitlar bilan (to‘lov moduli bor,
-   interfeysda ulanmagan).
+6. ~~**Tarif sotib olish oqimi**~~ — qo‘shildi: "Tarif" sahifasida joriy tarif,
+   foydalanish va tariflar ro‘yxati; sotib olish provayder sahifasida tugaydi,
+   karta ma’lumotlari interfeysda so‘ralmaydi. **Haqiqiy to‘lov sinalmagan:**
+   lokalda Click/Payme/Uzum kalitlari yo‘q, shuning uchun faqat `wallet`
+   usuli ko‘rinadi va u "mablag‘ yetarli emas" deb rad etadi.
 7. **Qaror kutmoqda:** SMS’siz ro‘yxatdan o‘tish production’da qoladimi
    (raqam egaligi tasdiqlanmaydi).
 

@@ -223,16 +223,20 @@ export function Card({
   action,
   children,
   className,
+  label,
   padded = true,
 }: {
   title?: ReactNode;
   action?: ReactNode;
   children: ReactNode;
   className?: string;
+  /** Names the card for assistive technology, which also makes it a region
+   * one can address: several cards of the same shape on a page. */
+  label?: string;
   padded?: boolean;
 }) {
   return (
-    <section className={clsx("rounded-xl border border-line bg-surface", className)}>
+    <section aria-label={label} className={clsx("rounded-xl border border-line bg-surface", className)}>
       {(title || action) && (
         <header className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
           <h2 className="text-sm font-semibold text-ink">{title}</h2>

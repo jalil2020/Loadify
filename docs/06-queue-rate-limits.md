@@ -95,7 +95,8 @@ bitta atomik operatsiya bo‘lgani uchun ikki worker bir vaqtda o‘ta olmaydi.
   parallel so‘rov ikkalasi ham limitdan o‘tib keta olmaydi.
 - Oylar platforma vaqt zonasida (Asia/Tashkent) hisoblanadi.
 - Limitlar `subscription_plans.limits` JSONB’da; yangi limit qo‘shish kod
-  o‘zgartirishni talab qilmaydi. Tarifi yo‘q kompaniya standart (Start) tarifda.
+  o‘zgartirishni talab qilmaydi. Tarifi yo‘q kompaniya standart (Start) tarifda —
+  `GET /plans` ham shu tarifni `is_current` deb belgilaydi.
 
 ## Kuzatuv (Prometheus metrikalari)
 

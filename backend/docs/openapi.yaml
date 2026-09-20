@@ -48,6 +48,10 @@ tags:
   - name: Bookings
   - name: Trips
   - name: Chat
+  - name: Billing
+    description: |
+      Plans, what they allow, and buying one. The distribution allowances a
+      plan carries are the ones GET /subscriptions/usage counts against.
   - name: Notifications
     description: |
       Besides marketplace events, the posting worker reports what stops
@@ -1290,6 +1294,145 @@ paths:
         "204": { description: Removed }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /plans:
+    get:
+      tags: [Billing]
+      summary: The tiers a company can be on
+      description: |
+        Each plan carries the distribution allowances in `limits`, keyed exactly
+        as the quota metrics are: tg_accounts, tg_groups, loads, posts,
+        ai_requests. A value of -1, or a key a plan does not have, is no ceiling.
+        Other keys belong to the marketplace side of the platform.
+
+        A company that never bought anything is on the free default plan, and
+        that plan is the one marked `is_current`: nobody is on no plan.
+      parameters:
+        - in: query
+          name: target_role
+          schema: { type: string, enum: [company, driver] }
+          description: Defaults to the caller's own side; company for a company member.
+      responses:
+        "200":
+          description: The tiers
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Plan" }
+
+  /payments/methods:
+    get:
+      tags: [Billing]
+      summary: How a plan can be paid for
+      description: |
+        The providers this deployment has credentials for, plus `wallet`, which
+        always works and needs none.
+      responses:
+        "200":
+          description: The providers
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          providers:
+                            type: array
+                            items: { type: string, example: click }
+
+  /subscriptions/me:
+    get:
+      tags: [Billing]
+      summary: The caller's paid plan, if any
+      description: |
+        A company on the free tier has no subscription row, which is a normal
+        state rather than a 404: the answer is then `{"subscription": null}`.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The subscription, or null
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        oneOf:
+                          - $ref: "#/components/schemas/Subscription"
+                          - type: object
+                            properties:
+                              subscription: { type: string, nullable: true, example: null }
+
+  /subscriptions:
+    post:
+      tags: [Billing]
+      summary: Buy a plan
+      description: |
+        Returns a checkout. A paid plan through a provider comes back with a
+        `checkout_url` to send the person to, and the plan changes only when
+        that provider's webhook arrives - not when this call returns. A free
+        plan, or a wallet with the balance, settles at once and comes back with
+        `paid: true`.
+
+        Buying the same plan twice in an hour resolves to the same order rather
+        than opening a second checkout.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan_id, provider]
+              properties:
+                plan_id: { type: string, format: uuid }
+                provider: { type: string, enum: [click, payme, uzum, wallet] }
+                auto_renew: { type: boolean }
+                return_url: { type: string, format: uri, maxLength: 512 }
+      responses:
+        "201":
+          description: The checkout
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Checkout" }
+        "402": { $ref: "#/components/responses/QuotaExceeded" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /subscriptions/cancel:
+    post:
+      tags: [Billing]
+      summary: Stop auto-renewal
+      description: |
+        The plan keeps working until it expires; only the renewal is off.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Auto-renewal is off
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Envelope" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /subscriptions/usage:
     get:
       tags: [Distribution]
@@ -1446,6 +1589,57 @@ components:
           type: string
           format: date-time
           description: Only on monthly allowances.
+
+    Plan:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, example: company_business_m }
+        name: { type: string, description: In the caller's language. }
+        description: { type: string, nullable: true }
+        target_role: { type: string, enum: [company, driver] }
+        price_amount: { type: integer, format: int64, description: In minor units; 29900000 is 299 000 UZS. }
+        currency: { type: string, example: UZS }
+        period: { type: string, enum: [month, year] }
+        trial_days: { type: integer }
+        features:
+          type: array
+          items: { type: string }
+        limits:
+          type: object
+          additionalProperties: { type: integer }
+          description: Keyed by metric; -1 or absent is no ceiling.
+          example: { tg_accounts: 5, tg_groups: 150, loads: 1000, posts: 10000, ai_requests: 3000 }
+        is_default: { type: boolean, description: The free tier every company starts on. }
+        is_current: { type: boolean }
+
+    Subscription:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        plan: { $ref: "#/components/schemas/Plan" }
+        status: { type: string, enum: [pending, trialing, active, expired, cancelled] }
+        started_at: { type: string, format: date-time, nullable: true }
+        expires_at: { type: string, format: date-time, nullable: true }
+        cancelled_at: { type: string, format: date-time, nullable: true }
+        auto_renew: { type: boolean }
+        days_left: { type: integer, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    Checkout:
+      type: object
+      properties:
+        order_id: { type: string, format: uuid }
+        provider: { type: string }
+        amount: { type: integer, format: int64 }
+        currency: { type: string }
+        status: { type: string }
+        checkout_url:
+          type: string
+          description: Where to send the person to pay; absent when nothing is owed.
+        paid:
+          type: boolean
+          description: True when it settled at once - a free plan, or a wallet with the balance.
 
     Usage:
       type: object

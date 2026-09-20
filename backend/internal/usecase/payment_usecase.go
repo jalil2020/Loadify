@@ -78,7 +78,14 @@ func (u *PaymentUsecase) ListPlans(ctx context.Context, targetRole string, local
 	out := make([]dto.PlanResponse, 0, len(plans))
 	for i := range plans {
 		item := planResponse(&plans[i], locale)
-		item.IsCurrent = plans[i].ID == currentPlanID
+		// Nobody is on no plan: without a subscription, the free default is
+		// what applies, and it is what the quota guard already enforces.
+		// Saying otherwise would offer people the tier they are already on.
+		if currentPlanID == uuid.Nil {
+			item.IsCurrent = plans[i].IsDefault
+		} else {
+			item.IsCurrent = plans[i].ID == currentPlanID
+		}
 		out = append(out, *item)
 	}
 	return out, nil

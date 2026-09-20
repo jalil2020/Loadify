@@ -23,7 +23,7 @@ const GroupRulesPage = lazy(() =>
   import("./pages/telegram/GroupRulesPage").then((m) => ({ default: m.GroupRulesPage })),
 );
 const HistoryPage = lazy(() => import("./pages/HistoryPage").then((m) => ({ default: m.HistoryPage })));
-const UsagePage = lazy(() => import("./pages/UsagePage").then((m) => ({ default: m.UsagePage })));
+const PlanPage = lazy(() => import("./pages/PlanPage").then((m) => ({ default: m.PlanPage })));
 const NotificationsPage = lazy(() =>
   import("./pages/NotificationsPage").then((m) => ({ default: m.NotificationsPage })),
 );
@@ -85,7 +85,7 @@ const router = createBrowserRouter([
           { path: "telegram", element: <TelegramPage /> },
           { path: "telegram/groups/:id", element: <GroupRulesPage /> },
           { path: "history", element: <HistoryPage /> },
-          { path: "usage", element: <UsagePage /> },
+          { path: "usage", element: <PlanPage /> },
           { path: "notifications", element: <NotificationsPage /> },
           { path: "dashboard", element: <Navigate to="/" replace /> },
           { path: "*", element: <NotFound /> },

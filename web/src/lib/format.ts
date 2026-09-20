@@ -59,6 +59,16 @@ export function formatDuration(seconds: number, lang: "uz" | "ru"): string {
   return m ? `${h} ${units.h} ${m} ${units.m}` : `${h} ${units.h}`;
 }
 
+/** Amounts travel in minor units; 29900000 UZS is 299 000 UZS. */
+export function formatMoney(minor: number | null | undefined, currency: string | null | undefined): string {
+  if (minor === null || minor === undefined) return "—";
+  const major = minor / 100;
+  const text = Number.isInteger(major)
+    ? numberFormat.format(major)
+    : new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(major);
+  return currency ? `${text} ${currency}` : text;
+}
+
 export function formatPercent(ratio: number | null | undefined): string {
   if (ratio === null || ratio === undefined) return "—";
   return `${Math.round(ratio * 100)}%`;

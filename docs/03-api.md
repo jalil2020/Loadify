@@ -36,7 +36,9 @@ havolalarini tekshiradi). Bu yerda — qoidalar va asosiy endpointlar xaritasi.
 | `POST /api/telegram/search` | — | MVP-2 (Telegram Load Finder), [08-mvp-plan.md](08-mvp-plan.md) |
 | `GET /api/posting-history` | `GET /posting-history` | `status`, `load_ad_id`, `group_id`, `mine` |
 | `GET /api/dashboard` | `GET /dashboard` | `scope=company|mine` |
-| `GET /api/subscription` | `GET /subscriptions/me`, `GET /subscriptions/usage` | Tarif va oylik foydalanish |
+| `GET /api/subscription` | `GET /subscriptions/me`, `GET /subscriptions/usage` | Tarif va oylik foydalanish. Pullik obuna bo‘lmasa `{"subscription": null}` — bu xato emas, bepul tarif |
+| — | `GET /plans`, `GET /payments/methods` | Tariflar (`limits` da kvota metrikalari) va to‘lov usullari |
+| — | `POST /subscriptions`, `POST /subscriptions/cancel` | Sotib olish (provayder sahifasiga `checkout_url`) va avto-yangilashni o‘chirish |
 
 `/load-ads` va `/loads` alohida: `/loads` — marketplace’dagi yuk (bron, reys),
 `/load-ads` — Telegram guruhlariga tarqatiladigan e’lon. Ularning shakli va

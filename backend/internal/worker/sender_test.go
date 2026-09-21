@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -197,6 +198,34 @@ func TestPeerFloodStopsTheAccount(t *testing.T) {
 	// The number is how people tell accounts apart, and it is still not sent.
 	if alert.AccountLabel != "+99890 *** ** 67" {
 		t.Errorf("label = %q, want the masked number", alert.AccountLabel)
+	}
+	// The group did nothing wrong, so it keeps its settings: the account is
+	// what Telegram stopped, and it may post there again once that lifts.
+	if h.groups.disabled || h.groups.deactivated {
+		t.Error("a group was turned off over an account-wide restriction")
+	}
+}
+
+// Telegram words this one as though a single channel banned the account, but
+// it means the account may not write in supergroups at all. Read as a group's
+// refusal it would quietly turn off every group the person posts to.
+func TestBeingBannedFromGroupsStopsTheAccountNotTheGroup(t *testing.T) {
+	h := newHarness(t)
+	h.refuseWith(domain.TelegramPeerFlood, "USER_BANNED_IN_CHANNEL", 0)
+
+	outcome := h.run(t)
+
+	if outcome.Status != domain.PostingFailed {
+		t.Fatalf("status = %q, want failed", outcome.Status)
+	}
+	if len(h.accounts.statuses) != 1 || h.accounts.statuses[0] != domain.TelegramAccountRestricted {
+		t.Errorf("account statuses = %v, want restricted", h.accounts.statuses)
+	}
+	if h.groups.disabled {
+		t.Error("posting was turned off for the group instead of the account")
+	}
+	if outcome.Detail == nil || !strings.Contains(*outcome.Detail, "@SpamBot") {
+		t.Errorf("detail = %v, want somewhere to find out why", outcome.Detail)
 	}
 }
 

@@ -269,7 +269,8 @@ func (s *Sender) failure(
 	case domain.TelegramPeerFlood:
 		// Telegram is treating the account as a spammer. Nothing from it is
 		// retried, and nothing queued from it goes out.
-		reason := "Telegram restricted this account for sending too much. Posting is stopped."
+		reason := "Telegram has limited this account from writing in groups. Posting is stopped. " +
+			"Write to @SpamBot in Telegram to see why and when it lifts."
 		if err := s.accounts.SetStatus(ctx, account.ID, domain.TelegramAccountRestricted, &reason, nil); err != nil {
 			s.log.Error("account restriction not recorded", logger.Err(err))
 		}

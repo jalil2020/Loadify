@@ -391,13 +391,29 @@ func (u *TelegramUsecase) Disconnect(ctx context.Context, userID, companyID, acc
 	return nil
 }
 
-// Dialogs lists the groups the account could post to, marking the ones already
-// connected.
-func (u *TelegramUsecase) Dialogs(
+// dialogsTTL is how long a read of someone's chat list stays good for.
+//
+// Reading it costs one Telegram call, and Telegram answers a burst of them
+// with a FLOOD_WAIT that then blocks the account for minutes. Connecting three
+// groups means opening the picker three times, which is ordinary use and must
+// not cost three calls. The list itself barely changes, and which of its chats
+// are already connected is read from our own database every time, so what is
+// cached is never stale in the way that matters.
+const dialogsTTL = 2 * time.Minute
+
+func dialogsKey(accountID uuid.UUID) string { return "tg:dialogs:" + accountID.String() }
+
+// dialogList returns the account's chats, from cache when it can.
+func (u *TelegramUsecase) dialogList(
 	ctx context.Context,
-	userID, companyID, accountID uuid.UUID,
-) ([]dto.TelegramDialogResponse, error) {
-	account, session, err := u.openAccount(ctx, userID, companyID, accountID)
+	account *domain.TelegramAccount,
+) ([]domain.TelegramDialog, error) {
+	var cached []domain.TelegramDialog
+	if err := u.cache.Get(ctx, dialogsKey(account.ID), &cached); err == nil && len(cached) > 0 {
+		return cached, nil
+	}
+
+	session, err := u.openSession(account)
 	if err != nil {
 		return nil, err
 	}
@@ -406,6 +422,28 @@ func (u *TelegramUsecase) Dialogs(
 	dialogs, err := u.auth.Dialogs(ctx, session)
 	if err != nil {
 		return nil, telegramFailure(err)
+	}
+	if err := u.cache.Set(ctx, dialogsKey(account.ID), dialogs, dialogsTTL); err != nil {
+		// A cache that will not hold only costs the next open another call.
+		u.log.Warn("dialog list not cached", logger.Err(err))
+	}
+	return dialogs, nil
+}
+
+// Dialogs lists the groups the account could post to, marking the ones already
+// connected.
+func (u *TelegramUsecase) Dialogs(
+	ctx context.Context,
+	userID, companyID, accountID uuid.UUID,
+) ([]dto.TelegramDialogResponse, error) {
+	account, err := u.ownedAccount(ctx, userID, companyID, accountID)
+	if err != nil {
+		return nil, err
+	}
+
+	dialogs, err := u.dialogList(ctx, account)
+	if err != nil {
+		return nil, err
 	}
 
 	connected, err := u.groups.ListByAccount(ctx, companyID, account.ID)
@@ -668,21 +706,43 @@ func (u *TelegramUsecase) openAccount(
 	ctx context.Context,
 	userID, companyID, accountID uuid.UUID,
 ) (*domain.TelegramAccount, []byte, error) {
-	if err := u.configured(); err != nil {
+	account, err := u.ownedAccount(ctx, userID, companyID, accountID)
+	if err != nil {
 		return nil, nil, err
+	}
+	session, err := u.openSession(account)
+	if err != nil {
+		return nil, nil, err
+	}
+	return account, session, nil
+}
+
+// ownedAccount is the caller's own connected account, without opening it. A
+// read that can be answered from cache has no business decrypting a session.
+func (u *TelegramUsecase) ownedAccount(
+	ctx context.Context,
+	userID, companyID, accountID uuid.UUID,
+) (*domain.TelegramAccount, error) {
+	if err := u.configured(); err != nil {
+		return nil, err
 	}
 	account, err := u.accounts.FindForUser(ctx, companyID, userID, accountID)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if len(account.SessionCiphertext) == 0 || account.SessionKeyVersion == nil {
-		return nil, nil, apperror.ErrConflict.WithMessage("Finish connecting this account first.")
+		return nil, apperror.ErrConflict.WithMessage("Finish connecting this account first.")
 	}
+	return account, nil
+}
+
+// openSession unseals the stored session. The caller wipes it when done.
+func (u *TelegramUsecase) openSession(account *domain.TelegramAccount) ([]byte, error) {
 	session, err := u.vault.Open(account.SessionCiphertext, int(*account.SessionKeyVersion), account.SessionAAD())
 	if err != nil {
-		return nil, nil, fmt.Errorf("open session: %w", err)
+		return nil, fmt.Errorf("open session: %w", err)
 	}
-	return account, session, nil
+	return session, nil
 }
 
 func (u *TelegramUsecase) configured() error {

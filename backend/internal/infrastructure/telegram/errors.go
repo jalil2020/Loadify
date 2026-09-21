@@ -25,12 +25,21 @@ var (
 
 	// PEER_FLOOD is the account being limited for spam. USER_DEACTIVATED_BAN is
 	// the same verdict delivered harder. Both stop everything.
-	restrictedTypes = []string{"PEER_FLOOD", "USER_DEACTIVATED_BAN", "USER_RESTRICTED"}
+	//
+	// USER_BANNED_IN_CHANNEL belongs here rather than with the group refusals,
+	// however it reads: Telegram means "you are banned from sending messages in
+	// supergroups and channels", which is about the account and not about one
+	// group. Treating it as a group's refusal made a limited account look like
+	// three unwelcoming groups, and turned posting off in each of them while
+	// the account itself went on looking healthy.
+	restrictedTypes = []string{
+		"PEER_FLOOD", "USER_DEACTIVATED_BAN", "USER_RESTRICTED", "USER_BANNED_IN_CHANNEL",
+	}
 
 	// The group is there, this account may not write in it.
 	forbiddenTypes = []string{
 		"CHAT_WRITE_FORBIDDEN", "CHAT_SEND_PLAIN_FORBIDDEN", "CHAT_RESTRICTED",
-		"USER_BANNED_IN_CHANNEL", "CHAT_ADMIN_REQUIRED", "CHAT_GUEST_SEND_FORBIDDEN",
+		"CHAT_ADMIN_REQUIRED", "CHAT_GUEST_SEND_FORBIDDEN",
 	}
 
 	// The group is not reachable for this account any more: it left, was

@@ -69,7 +69,13 @@ const KNOWN_CODES = new Set([
 
 // The server writes these messages for the situation at hand ("your plan has
 // 3 of 10 posts left"), so they are shown under the translated title.
-const SPECIFIC_CODES = new Set(["QUOTA_EXCEEDED", "CONFLICT", "BAD_REQUEST", "FORBIDDEN", "SERVICE_UNAVAILABLE"]);
+//
+// RATE_LIMITED is one of them because the message carries the only thing worth
+// knowing: how long the wait is. "Too many requests" alone leaves someone
+// pressing the button again, which is what caused the wait.
+const SPECIFIC_CODES = new Set([
+  "QUOTA_EXCEEDED", "CONFLICT", "BAD_REQUEST", "FORBIDDEN", "SERVICE_UNAVAILABLE", "RATE_LIMITED",
+]);
 
 export function describeError(err: unknown, t: Translate): string {
   if (!(err instanceof ApiError)) return t("err.generic");

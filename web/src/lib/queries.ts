@@ -344,12 +344,15 @@ export function useDisconnect() {
   });
 }
 
+/** The server caches this for two minutes, since each miss is a Telegram call
+ * and a burst of them gets the account a FLOOD_WAIT. Reopening the picker
+ * within that window should not even ask. */
 export function useDialogs(accountId: UUID | undefined) {
   return useQuery({
     queryKey: keys.dialogs(accountId ?? ""),
     queryFn: () => api.get<TelegramDialog[]>(`/telegram/accounts/${accountId}/dialogs`),
     enabled: Boolean(accountId),
-    staleTime: 60_000,
+    staleTime: 120_000,
     retry: false,
   });
 }

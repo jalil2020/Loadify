@@ -243,6 +243,8 @@ export const uz = {
   "pub.approved": "Yuboriladi",
   "pub.skipped": "Yuborilmaydi",
   "pub.noCandidates": "Mos guruh topilmadi. Guruhlar qoidalarini va yo‘nalishlarini tekshiring.",
+  "pub.noGroups": "Hali birorta guruh ulanmagan. Tarqatish siz ulagan guruhlarga yuboriladi.",
+  "pub.connectGroup": "Guruh ulash",
   "pub.retryIn": "{time} dan keyin mumkin",
   "pub.message": "Guruhga yuboriladigan matn",
   "pub.postsLeft": "Bu oy yana {n} ta post yuborish mumkin",

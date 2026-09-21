@@ -5,7 +5,7 @@ import { useErrorText, useToast } from "../../components/feedback";
 import { Badge, Button, Card, Checkbox, LinkButton, Notice, Select } from "../../components/ui";
 import { useI18n } from "../../i18n";
 import { formatDuration } from "../../lib/format";
-import { useAccounts, usePreview, usePublish } from "../../lib/queries";
+import { useAccounts, useGroups, usePreview, usePublish } from "../../lib/queries";
 import type { LoadAd, PublishPreview, UUID } from "../../lib/types";
 import { matchText, reasonText } from "../../lib/labels";
 
@@ -25,6 +25,7 @@ export function PublishPanel({ ad }: { ad: LoadAd }) {
   const toast = useToast();
   const errorText = useErrorText();
   const accounts = useAccounts();
+  const groups = useGroups();
   const preview = usePreview(ad.id);
   const publish = usePublish(ad.id);
 
@@ -41,6 +42,9 @@ export function PublishPanel({ ad }: { ad: LoadAd }) {
   const now = useNow(review !== null);
 
   const chosenAccount = accountId || usable[0]?.id || "";
+  // An empty result means one of two things: no group is connected at all, or
+  // the connected ones did not fit this advert.
+  const noGroupsYet = groups.isSuccess && groups.data.length === 0;
   const expired = review !== null && new Date(review.expires_at).getTime() <= now;
   const overQuota = review?.posts_left !== null && review !== null && selected.size > (review.posts_left ?? 0);
   const blocked = ad.missing.length > 0 || ad.status === "archived";
@@ -136,7 +140,19 @@ export function PublishPanel({ ad }: { ad: LoadAd }) {
             </p>
 
             {review.candidates === 0 && review.approved.length === 0 && review.skipped.length === 0 ? (
-              <Notice tone="warn">{t("pub.noCandidates")}</Notice>
+              // Nothing matched has two quite different causes, and telling
+              // someone to check rules they never wrote sends them looking in
+              // the wrong place.
+              <Notice tone="warn">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span>{noGroupsYet ? t("pub.noGroups") : t("pub.noCandidates")}</span>
+                  {noGroupsYet && (
+                    <LinkButton to="/telegram" variant="secondary" size="sm" icon={<Send className="size-4" />}>
+                      {t("pub.connectGroup")}
+                    </LinkButton>
+                  )}
+                </div>
+              </Notice>
             ) : (
               <div className="grid gap-4 lg:grid-cols-2">
                 <div>

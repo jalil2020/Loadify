@@ -2,7 +2,6 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { useI18n } from "../i18n";
 import { api } from "./api";
 import type {
-  CargoType,
   Country,
   Dashboard,
   LoadAd,
@@ -22,7 +21,6 @@ import type {
   TelegramLoginStep,
   Usage,
   UUID,
-  VehicleType,
 } from "./types";
 
 export const keys = {
@@ -67,26 +65,6 @@ export function useRegions(country: string | null | undefined) {
     staleTime: REF_STALE,
   });
 }
-
-export function useVehicleTypes() {
-  const { lang } = useI18n();
-  return useQuery({
-    queryKey: keys.ref("vehicle-types", lang),
-    queryFn: () => api.get<VehicleType[]>("/reference/vehicle-types"),
-    staleTime: REF_STALE,
-  });
-}
-
-export function useCargoTypes() {
-  const { lang } = useI18n();
-  return useQuery({
-    queryKey: keys.ref("cargo-types", lang),
-    queryFn: () => api.get<CargoType[]>("/reference/cargo-types"),
-    staleTime: REF_STALE,
-  });
-}
-
-// ── dashboard and plan ──────────────────────────────────────────────
 
 export function useDashboard(scope?: "mine" | "company") {
   return useQuery({

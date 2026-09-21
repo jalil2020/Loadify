@@ -62,17 +62,6 @@ export interface Region {
   name: string;
 }
 
-export interface VehicleType {
-  code: string;
-  name: string;
-}
-
-export interface CargoType {
-  id: UUID;
-  code: string;
-  name: string;
-}
-
 // ── adverts ─────────────────────────────────────────────────────────
 export type AdStatus = "draft" | "ready" | "publishing" | "published" | "archived";
 

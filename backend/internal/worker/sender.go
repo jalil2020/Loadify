@@ -31,6 +31,15 @@ import (
 // goes out.
 const guardUnavailableWait = 30 * time.Second
 
+// writeBlockWait is how long an account waits after Telegram refuses its
+// messages to groups in general (USER_BANNED_IN_CHANNEL).
+//
+// Telegram gives no duration for this one, unlike a FLOOD_WAIT, so the wait is
+// ours to choose. An hour is long enough that a burst from a fresh session is
+// not repeated into the same block, and short enough that a person who posts a
+// few adverts a day does not notice it beyond one delay.
+const writeBlockWait = time.Hour
+
 // Sender processes posting jobs.
 type Sender struct {
 	posting  domain.PostingRepository
@@ -260,6 +269,28 @@ func (s *Sender) failure(
 		s.alert(ctx, account, nil, domain.DistributionAlert{Kind: domain.AlertAccountPaused, Until: &until})
 		return rateLimitedCode(until, code, reason)
 
+	case domain.TelegramWriteBlocked:
+		// Not this group's doing, and not a verdict on the account either: the
+		// whole account waits and the queue survives it. The group keeps its
+		// settings, because there is nothing wrong with it.
+		until := now.Add(writeBlockWait)
+		reason := "Telegram is not accepting messages from this account in groups right now. " +
+			"Posting pauses until " + until.Format("15:04") + " and then carries on. " +
+			"If it keeps happening, ask @SpamBot in Telegram whether the account is limited."
+		if err := s.guard.PauseAccount(ctx, account.ID, until); err != nil {
+			s.log.Warn("account pause not recorded in the guard", logger.Err(err))
+		}
+		if err := s.accounts.SetStatus(ctx, account.ID, domain.TelegramAccountPaused, &reason, &until); err != nil {
+			s.log.Warn("account pause not recorded", logger.Err(err))
+		}
+		s.release(ctx, target)
+		s.recordSpam(ctx, job, "write_blocked", writeBlockWait)
+		s.log.Warn("telegram refused a message from this account in groups",
+			logger.String("account_id", account.ID.String()),
+			logger.String("group_id", group.ID.String()))
+		s.alert(ctx, account, nil, domain.DistributionAlert{Kind: domain.AlertAccountPaused, Until: &until})
+		return rateLimitedCode(until, code, reason)
+
 	case domain.TelegramSlowmode:
 		// A wait for this group only.
 		s.release(ctx, target)
@@ -269,8 +300,7 @@ func (s *Sender) failure(
 	case domain.TelegramPeerFlood:
 		// Telegram is treating the account as a spammer. Nothing from it is
 		// retried, and nothing queued from it goes out.
-		reason := "Telegram has limited this account from writing in groups. Posting is stopped. " +
-			"Write to @SpamBot in Telegram to see why and when it lifts."
+		reason := "Telegram restricted this account for sending too much. Posting is stopped."
 		if err := s.accounts.SetStatus(ctx, account.ID, domain.TelegramAccountRestricted, &reason, nil); err != nil {
 			s.log.Error("account restriction not recorded", logger.Err(err))
 		}
@@ -474,7 +504,7 @@ func (s *Sender) alert(
 func (s *Sender) recordSpam(ctx context.Context, job *domain.PostingJob, kind string, wait time.Duration) {
 	switch kind {
 	case "duplicate", "cooldown", "group_limit", "account_limit", "flood_wait", "slowmode",
-		"peer_flood", "write_forbidden", "stale":
+		"peer_flood", "write_forbidden", "write_blocked", "stale":
 	default:
 		return
 	}

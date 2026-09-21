@@ -206,26 +206,44 @@ func TestPeerFloodStopsTheAccount(t *testing.T) {
 	}
 }
 
-// Telegram words this one as though a single channel banned the account, but
-// it means the account may not write in supergroups at all. Read as a group's
-// refusal it would quietly turn off every group the person posts to.
-func TestBeingBannedFromGroupsStopsTheAccountNotTheGroup(t *testing.T) {
+// Telegram words this one as though one channel banned the account. It is
+// neither that nor a verdict: the account cannot write in groups for a while.
+// The group keeps its settings and the advert is tried again later.
+func TestAWriteBlockPausesTheAccountAndKeepsTheQueue(t *testing.T) {
 	h := newHarness(t)
-	h.refuseWith(domain.TelegramPeerFlood, "USER_BANNED_IN_CHANNEL", 0)
+	h.refuseWith(domain.TelegramWriteBlocked, "USER_BANNED_IN_CHANNEL", 0)
 
 	outcome := h.run(t)
 
-	if outcome.Status != domain.PostingFailed {
-		t.Fatalf("status = %q, want failed", outcome.Status)
+	if outcome.Status != domain.PostingRateLimited {
+		t.Fatalf("status = %q, want rate_limited so it is tried again", outcome.Status)
 	}
-	if len(h.accounts.statuses) != 1 || h.accounts.statuses[0] != domain.TelegramAccountRestricted {
-		t.Errorf("account statuses = %v, want restricted", h.accounts.statuses)
+	want := clock.Add(writeBlockWait)
+	if outcome.NextAttemptAt == nil || !outcome.NextAttemptAt.Equal(want) {
+		t.Errorf("next attempt = %v, want %v", outcome.NextAttemptAt, want)
 	}
-	if h.groups.disabled {
-		t.Error("posting was turned off for the group instead of the account")
+	if len(h.accounts.statuses) != 1 || h.accounts.statuses[0] != domain.TelegramAccountPaused {
+		t.Errorf("account statuses = %v, want paused, not restricted", h.accounts.statuses)
+	}
+	if len(h.guard.pauses) != 1 || !h.guard.pauses[0].Equal(want) {
+		t.Errorf("guard pauses = %v, want one until %v", h.guard.pauses, want)
+	}
+	if len(h.posting.cancelled) != 0 {
+		t.Error("the queue was cancelled over a block that passes on its own")
+	}
+	if h.groups.disabled || h.groups.deactivated {
+		t.Error("the group was turned off although Telegram never refused it")
+	}
+	// The reservation is returned: nothing reached the group.
+	if h.guard.releases != 1 {
+		t.Errorf("releases = %d, want the slot back", h.guard.releases)
+	}
+	assertSpam(t, h, "write_blocked")
+	if alert := h.alerts.only(t, domain.AlertAccountPaused); alert.Until == nil || !alert.Until.Equal(want) {
+		t.Errorf("alert = %+v, want the pause and when it lifts", alert)
 	}
 	if outcome.Detail == nil || !strings.Contains(*outcome.Detail, "@SpamBot") {
-		t.Errorf("detail = %v, want somewhere to find out why", outcome.Detail)
+		t.Errorf("detail = %v, want where to look if it keeps happening", outcome.Detail)
 	}
 }
 

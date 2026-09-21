@@ -296,6 +296,12 @@ const (
 	// TelegramPeerFlood is the account being treated as a spammer. Nothing is
 	// retried; the person and an operator are told.
 	TelegramPeerFlood TelegramErrorKind = "peer_flood"
+	// TelegramWriteBlocked is Telegram refusing this account's messages to
+	// groups in general, not to one group. It arrives as USER_BANNED_IN_CHANNEL
+	// even when the account is not restricted and the person can write in the
+	// same group by hand a minute later, so it is read as a passing block and
+	// the account waits rather than being stopped for good.
+	TelegramWriteBlocked TelegramErrorKind = "write_blocked"
 	// TelegramWriteForbidden is the group refusing this account's messages.
 	TelegramWriteForbidden TelegramErrorKind = "write_forbidden"
 	// TelegramGroupGone is the group no longer being reachable for this

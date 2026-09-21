@@ -35,9 +35,9 @@ func TestClassify(t *testing.T) {
 		{"write forbidden", tgerr.New(403, "CHAT_WRITE_FORBIDDEN"), domain.TelegramWriteForbidden, 0},
 		{"text forbidden", tgerr.New(403, "CHAT_SEND_PLAIN_FORBIDDEN"), domain.TelegramWriteForbidden, 0},
 		{"restricted in group", tgerr.New(400, "CHAT_RESTRICTED"), domain.TelegramWriteForbidden, 0},
-		// Telegram's wording names a channel, but the ban is on the account:
-		// it may not write in any supergroup or channel.
-		{"banned from writing in groups", tgerr.New(400, "USER_BANNED_IN_CHANNEL"), domain.TelegramPeerFlood, 0},
+		// Telegram's wording names a channel; the block is on the account and
+		// it passes, so it is neither a group's refusal nor a verdict.
+		{"blocked from writing in groups", tgerr.New(400, "USER_BANNED_IN_CHANNEL"), domain.TelegramWriteBlocked, 0},
 		{"left the group", tgerr.New(406, "CHANNEL_PRIVATE"), domain.TelegramGroupGone, 0},
 		{"no such channel", tgerr.New(400, "CHANNEL_INVALID"), domain.TelegramGroupGone, 0},
 		{"no such peer", tgerr.New(404, "PEER_ID_INVALID"), domain.TelegramGroupGone, 0},

@@ -25,16 +25,19 @@ var (
 
 	// PEER_FLOOD is the account being limited for spam. USER_DEACTIVATED_BAN is
 	// the same verdict delivered harder. Both stop everything.
+	restrictedTypes = []string{"PEER_FLOOD", "USER_DEACTIVATED_BAN", "USER_RESTRICTED"}
+
+	// USER_BANNED_IN_CHANNEL names a channel but is not about one: Telegram
+	// says the account may not write in supergroups at all.
 	//
-	// USER_BANNED_IN_CHANNEL belongs here rather than with the group refusals,
-	// however it reads: Telegram means "you are banned from sending messages in
-	// supergroups and channels", which is about the account and not about one
-	// group. Treating it as a group's refusal made a limited account look like
-	// three unwelcoming groups, and turned posting off in each of them while
-	// the account itself went on looking healthy.
-	restrictedTypes = []string{
-		"PEER_FLOOD", "USER_DEACTIVATED_BAN", "USER_RESTRICTED", "USER_BANNED_IN_CHANNEL",
-	}
+	// It is its own kind because it is not a verdict either. A fresh session
+	// that posts to a few public groups in quick succession gets it, while
+	// @SpamBot reports no limit, the account's own rights in those groups are
+	// intact, and the person can write there by hand soon after. Read as a
+	// group refusing the account it switched off good groups one by one; read
+	// as a restriction it would stop the account until someone reconnected it.
+	// It is neither: the account waits and tries again.
+	writeBlockedTypes = []string{"USER_BANNED_IN_CHANNEL"}
 
 	// The group is there, this account may not write in it.
 	forbiddenTypes = []string{
@@ -88,6 +91,8 @@ func Classify(err error) *domain.TelegramError {
 		classified.Wait = time.Duration(rpc.Argument) * time.Second
 	case rpc.IsOneOf(restrictedTypes...):
 		classified.Kind = domain.TelegramPeerFlood
+	case rpc.IsOneOf(writeBlockedTypes...):
+		classified.Kind = domain.TelegramWriteBlocked
 	case rpc.IsOneOf(forbiddenTypes...):
 		classified.Kind = domain.TelegramWriteForbidden
 	case rpc.IsOneOf(goneTypes...):

@@ -3,9 +3,9 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router";
 import { useErrorText, useToast } from "../../components/feedback";
 import { AreaPicker } from "../../components/places";
-import { Button, Card, Checkbox, ChipSelect, ErrorState, Field, Input, Notice, PageHeader, Select, Spinner, Textarea } from "../../components/ui";
+import { Button, Card, Checkbox, ErrorState, Field, Input, Notice, PageHeader, Select, Spinner, Textarea } from "../../components/ui";
 import { useI18n } from "../../i18n";
-import { useCargoTypes, useGroups, useSaveRules, useVehicleTypes } from "../../lib/queries";
+import { useGroups, useSaveRules } from "../../lib/queries";
 import type { SaveGroupRules, TelegramGroup } from "../../lib/types";
 import { fieldErrors } from "../../lib/labels";
 
@@ -20,10 +20,6 @@ interface RouteDraft {
 interface Draft {
   language: string;
   postingEnabled: boolean;
-  vehicles: string[];
-  cargo: string[];
-  minWeight: string;
-  maxWeight: string;
   hourly: string;
   daily: string;
   cooldown: string;
@@ -41,10 +37,6 @@ function toDraft(g: TelegramGroup): Draft {
   return {
     language: g.language,
     postingEnabled: g.posting_enabled,
-    vehicles: r?.vehicle_types ?? [],
-    cargo: r?.cargo_type_codes ?? [],
-    minWeight: s(r?.min_weight_kg),
-    maxWeight: s(r?.max_weight_kg),
     hourly: s(r?.hourly_limit ?? 1),
     daily: s(r?.daily_limit ?? 3),
     cooldown: s(r?.cooldown_minutes ?? 60),
@@ -67,10 +59,11 @@ function toRequest(d: Draft): SaveGroupRules {
   return {
     language: d.language,
     posting_enabled: d.postingEnabled,
-    vehicle_types: d.vehicles,
-    cargo_type_codes: d.cargo,
-    min_weight_kg: intOrNull(d.minWeight),
-    max_weight_kg: intOrNull(d.maxWeight),
+    // Kept out of the form: what a group hauls is in the advert's own words.
+    vehicle_types: [],
+    cargo_type_codes: [],
+    min_weight_kg: null,
+    max_weight_kg: null,
     hourly_limit: Number(d.hourly),
     daily_limit: Number(d.daily),
     cooldown_minutes: Number(d.cooldown),
@@ -96,8 +89,6 @@ export function GroupRulesPage() {
   const toast = useToast();
   const errorText = useErrorText();
   const groups = useGroups();
-  const vehicles = useVehicleTypes();
-  const cargoTypes = useCargoTypes();
   const save = useSaveRules(id);
   const group = groups.data?.find((g) => g.id === id);
 
@@ -121,13 +112,11 @@ export function GroupRulesPage() {
       draft.routes.map((r) => (r.key === key ? { ...r, ...patch } : r)),
     );
 
-  const weightsInvalid =
-    draft.minWeight !== "" && draft.maxWeight !== "" && Number(draft.minWeight) > Number(draft.maxWeight);
   const quietInvalid = (draft.quietFrom === "") !== (draft.quietTo === "");
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (weightsInvalid || quietInvalid) return;
+    if (quietInvalid) return;
     save.mutate(toRequest(draft), {
       onSuccess: (g) => {
         toast.success(t("rules.saved"));
@@ -232,44 +221,6 @@ export function GroupRulesPage() {
           </div>
         </Card>
 
-        <Card title={`${t("rules.vehicles")} · ${t("rules.cargo")}`}>
-          <div className="flex flex-col gap-5">
-            <div>
-              <p className="mb-2 text-sm font-medium text-ink-soft">{t("rules.vehicles")}</p>
-              <ChipSelect
-                options={(vehicles.data ?? []).map((v) => ({ value: v.code, label: v.name }))}
-                value={draft.vehicles}
-                onChange={(v) => set("vehicles", v)}
-              />
-              <p className="mt-2 text-xs text-muted">{t("rules.anyHint")}</p>
-            </div>
-            <div>
-              <p className="mb-2 text-sm font-medium text-ink-soft">{t("rules.cargo")}</p>
-              <ChipSelect
-                options={(cargoTypes.data ?? []).map((c) => ({ value: c.code, label: c.name }))}
-                value={draft.cargo}
-                onChange={(v) => set("cargo", v)}
-              />
-              <p className="mt-2 text-xs text-muted">{t("rules.anyHint")}</p>
-            </div>
-            <fieldset>
-              <legend className="mb-2 text-sm font-medium text-ink-soft">{t("rules.weight")}</legend>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label={t("rules.min")} error={weightsInvalid ? t("err.VALIDATION_ERROR") : undefined}>
-                  {(fid) => (
-                    <Input id={fid} type="number" min={1} max={100000} value={draft.minWeight} onChange={(e) => set("minWeight", e.target.value)} />
-                  )}
-                </Field>
-                <Field label={t("rules.max")}>
-                  {(fid) => (
-                    <Input id={fid} type="number" min={1} max={100000} value={draft.maxWeight} onChange={(e) => set("maxWeight", e.target.value)} />
-                  )}
-                </Field>
-              </div>
-            </fieldset>
-          </div>
-        </Card>
-
         <Card
           title={t("rules.routes")}
           action={
@@ -330,7 +281,7 @@ export function GroupRulesPage() {
         </Card>
 
         <div className="flex justify-end">
-          <Button type="submit" loading={save.isPending} disabled={weightsInvalid || quietInvalid}>
+          <Button type="submit" loading={save.isPending} disabled={quietInvalid}>
             {save.isPending ? t("common.saving") : t("common.save")}
           </Button>
         </div>
